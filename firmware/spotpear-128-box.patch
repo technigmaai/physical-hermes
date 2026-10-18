@@ -1,0 +1,398 @@
+diff --git a/docs/hardware.md b/docs/hardware.md
+index 33e71c2..ab36bc1 100644
+--- a/docs/hardware.md
++++ b/docs/hardware.md
+@@ -494,6 +494,48 @@ This port is written from Elecrow's published factory example ([CrowPanel 5.0 re
+ 
+ Panel timings (15 MHz PCLK, 8/4/43 and 8/4/12 porches, `pclk_active_neg`) and the pin map follow the factory `crowpanel-esp32-5.0-3.0` Arduino example at commit `fd959ac`; see [THIRD_PARTY_NOTICES](../THIRD_PARTY_NOTICES.md). A boot smoke check passed on a real board: the panel initialization log, the GT911's ID, Wi-Fi and pairing. Rendering, colours, brightness and touch coordinates are not yet verified; see the [hardware validation table](hardware-validation.md).
+ 
++## SpotPear ESP32-S3-LCD-1.28-BOX
++
++Board option `spotpear-128-box`, for SpotPear's round-screen AI robot, sold as the "DeepSeek XiaoZhi AI Voice Chat Robot": an ESP32-S3R8 with 16 MB flash and 8 MB octal PSRAM, a 1.28" 240×240 round GC9A01 panel over SPI, a CST816D capacitive touchscreen, one ES8311 covering both the speaker DAC and an analog microphone ADC on a duplex I2S bus with an NS4150B amplifier, BOOT and power keys, and a battery behind a 1:2 divider. This port is experimental.
++
++**Back up the vendor firmware before the first flash.** It streams audio and takes over-the-air updates from `api.tenclass.net`; the full 16 MB comes back in about 80 seconds:
++
++```bash
++esptool.py --chip esp32s3 read_flash 0 0x1000000 stock.bin
++```
++
++| Part | Chip | Connection |
++|---|---|---|
++| Display | GC9A01, SPI | MOSI 2, SCLK 4, CS 5, DC 47, RST 38; 40 MHz; 240×240 round, mirrored on X, colour inverted; backlight GPIO 42, active-low |
++| Touch | CST816D | I2C 0x15 on SDA 11, SCL 7; RST 6, INT 12 |
++| Speaker DAC + microphone ADC | ES8311 | I2C 0x18 on SDA 15, SCL 14; I2S MCLK 16, BCLK 9, WS 45, DOUT 8, DIN 10; NS4150B amplifier enable 46 |
++| Status LED | | GPIO 48 |
++| Keys | | BOOT GPIO 0 (TALK) |
++| Power | | no latch pin — power is latched in hardware; charge signal on GPIO 41, **active-high**; battery divider on GPIO 1 (ADC1 channel 0), ratio 2 |
++
++The microphones are analog MEMS parts wired into the ES8311's own ADC, so both directions share a single codec handle and there is no ES7210. Because the board has no latch pin, **Power off** is unavailable: the PWR key owns power-off.
++
++**Build and flash it** with PlatformIO:
++
++```bash
++cd firmware/esp32
++pio run -e spotpear-128-box -t upload -t monitor
++```
++
++The USB-C socket is the S3's own USB Serial/JTAG and serves both flashing and the serial console. BOOT does not need to be held: esptool resets the chip into download mode over USB-JTAG by itself.
++
++### First flash: what to check
++
++1. **Boot log:** `codecs: speaker ready, microphones ready (es8311 analog)`. The `hg.diag` parts line should read `display gc9a01, microphone es8311, speaker es8311`.
++2. **Screen:** the mascot is upright inside the round bezel and the colours are right (amber accents, not blue). Swapped red and blue means `lcd.bgr` in `board.cpp` is wrong.
++3. **Touch:** dragging down cancels a reply. If the X axis runs backwards relative to the screen, clear `touch.mirror_x` in `board.cpp`.
++4. **Microphone:** hold BOOT and speak; the waves follow your voice and the transcript is right.
++5. **Speaker:** replies are clear and loud enough (`set volume 80`).
++6. **Battery:** unplug USB with the battery in and the device stays on. A percentage that looks wrong means the divider ratio is off; a charging state that reads backwards means `charging_active_high` is the wrong way round.
++7. **Console:** `hermes-gadget diag` answers over the USB-C port.
++
++The pin map follows SpotPear's schematic `ESP32S3-1.28inch-BOX.pdf` and xiaozhi-esp32's `spotpear/sp-esp32-s3-1.28-box` board; see [THIRD_PARTY_NOTICES](../THIRD_PARTY_NOTICES.md).
++
+ ## Build and flash
+ 
+ **No toolchain needed:** the [browser installer](https://adolanium.github.io/hermes-gadget-sdk/) flashes each release's prebuilt firmware from Chrome or Edge, then sets up Wi-Fi and pairing. The release files are also on the [releases page](https://github.com/Adolanium/hermes-gadget-sdk/releases), for `esptool.py write_flash 0x0 hermes-gadget-<board>-<version>.bin`, which also erases the board's settings.
+diff --git a/firmware/esp32/boards/spotpear-esp32s3-lcd-128-box.json b/firmware/esp32/boards/spotpear-esp32s3-lcd-128-box.json
+new file mode 100644
+index 0000000..1c840db
+--- /dev/null
++++ b/firmware/esp32/boards/spotpear-esp32s3-lcd-128-box.json
+@@ -0,0 +1,22 @@
++{
++  "build": {
++    "core": "esp32",
++    "f_cpu": "240000000L",
++    "f_flash": "80000000L",
++    "flash_mode": "dio",
++    "hwids": [["0x303A", "0x1001"]],
++    "mcu": "esp32s3",
++    "variant": "esp32s3"
++  },
++  "frameworks": ["espidf"],
++  "name": "SpotPear ESP32-S3-LCD-1.28-BOX (16MB flash, 8MB PSRAM)",
++  "upload": {
++    "flash_size": "16MB",
++    "maximum_ram_size": 327680,
++    "maximum_size": 16777216,
++    "require_upload_port": true,
++    "speed": 115200
++  },
++  "url": "https://spotpear.com/wiki/ESP32-S3-N16R8-AI-DeepSeek-XiaoZhi-XiaGe-Qwen-DouBao-1.28-inch-Round-LCD-BOX-TouchScreen.html",
++  "vendor": "SpotPear"
++}
+diff --git a/firmware/esp32/boards/spotpear-esp32s3-lcd-128-box/sdkconfig.defaults b/firmware/esp32/boards/spotpear-esp32s3-lcd-128-box/sdkconfig.defaults
+new file mode 100644
+index 0000000..b683919
+--- /dev/null
++++ b/firmware/esp32/boards/spotpear-esp32s3-lcd-128-box/sdkconfig.defaults
+@@ -0,0 +1,22 @@
++# SpotPear ESP32-S3-LCD-1.28-BOX (the round "DeepSeek XiaoZhi AI" robot ball):
++# ESP32-S3R8 (8 MB octal PSRAM), 16 MB flash, 1.28" 240x240 GC9A01 over SPI,
++# CST816 touch, one ES8311 doing speaker DAC and analog-microphone ADC on a
++# duplex I2S bus, NS4150B amplifier, battery behind a 1:2 divider.
++# Upstream board name: spotpear/sp-esp32-s3-1.28-box.
++# Pins: docs/hardware.md#spotpear-esp32s3-lcd-128-box
++CONFIG_IDF_TARGET="esp32s3"
++# CONFIG_ESPTOOLPY_FLASHSIZE_4MB is not set
++CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
++CONFIG_SPIRAM=y
++CONFIG_SPIRAM_MODE_OCT=y
++CONFIG_SPIRAM_SPEED_80M=y
++# The 115 KB framebuffer and audio buffers go to PSRAM.
++CONFIG_SPIRAM_USE_MALLOC=y
++# If PSRAM ever fails to start, boot anyway so the log and `diag` can say so.
++CONFIG_SPIRAM_IGNORE_NOTFOUND=y
++CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
++# The USB-C socket is the S3's own USB Serial/JTAG, so the console must live
++# there: a secondary console is output-only and typed commands would be lost.
++# CONFIG_ESP_CONSOLE_UART_DEFAULT is not set
++CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
++CONFIG_HG_BOARD_SPOTPEAR_128_BOX=y
+diff --git a/firmware/esp32/main/CMakeLists.txt b/firmware/esp32/main/CMakeLists.txt
+index dde0750..86c4cd7 100644
+--- a/firmware/esp32/main/CMakeLists.txt
++++ b/firmware/esp32/main/CMakeLists.txt
+@@ -47,6 +47,7 @@ idf_component_register(
+         esp_adc
+         esp_event
+         esp_lcd
++        esp_lcd_gc9a01
+         esp_lcd_st7701
+         esp_lcd_panel_io_additions
+         esp_netif
+diff --git a/firmware/esp32/main/Kconfig.projbuild b/firmware/esp32/main/Kconfig.projbuild
+index e6c03f0..09755e5 100644
+--- a/firmware/esp32/main/Kconfig.projbuild
++++ b/firmware/esp32/main/Kconfig.projbuild
+@@ -53,6 +53,8 @@ menu "Hermes Gadget"
+             bool "Elecrow CrowPanel 2.1-inch HMI (480x480 RGB, rotary, touch)"
+         config HG_BOARD_CROWPANEL_50
+             bool "Elecrow CrowPanel 5.0-inch HMI (800x480 RGB ILI6122, GT911 touch)"
++        config HG_BOARD_SPOTPEAR_128_BOX
++            bool "SpotPear ESP32-S3 1.28-inch AI box (round GC9A01, CST816, ES8311)"
+         config HG_BOARD_CUSTOM
+             bool "Custom pins (configure below)"
+     endchoice
+diff --git a/firmware/esp32/main/board.cpp b/firmware/esp32/main/board.cpp
+index 08948dd..5efd464 100644
+--- a/firmware/esp32/main/board.cpp
++++ b/firmware/esp32/main/board.cpp
+@@ -34,6 +34,8 @@ namespace {
+ #define HG_BOARD_NAME "crowpanel-5.0"
+ #elif CONFIG_HG_BOARD_WS_ESP32S3_LCD_154
+ #define HG_BOARD_NAME "waveshare-esp32s3-lcd-154"
++#elif CONFIG_HG_BOARD_SPOTPEAR_128_BOX
++#define HG_BOARD_NAME "spotpear-esp32s3-lcd-128-box"
+ #else
+ #define HG_BOARD_NAME "custom"
+ #endif
+@@ -536,6 +538,70 @@ BoardConfig make() {
+   b.cancel_label = "Screen";
+   return b;
+ }
++#elif CONFIG_HG_BOARD_SPOTPEAR_128_BOX
++// SpotPear ESP32-S3-LCD-1.28-BOX — the round "DeepSeek XiaoZhi AI" robot ball.
++// 1.28" 240x240 GC9A01 over SPI, CST816 touch, one ES8311 doing speaker DAC and
++// microphone ADC on a duplex I2S bus (two analog MEMS microphones wired
++// differentially into its ADC), NS4150B amplifier, battery on a 1:2 divider.
++// The power latch is hardware, so there is no enable pin to drive.
++// Pins: SpotPear's schematic ESP32S3-1.28inch-BOX.pdf and the upstream
++// xiaozhi-esp32 board spotpear/sp-esp32-s3-1.28-box (config.h).
++// docs/hardware.md#spotpear-esp32s3-lcd-128-box
++BoardConfig make() {
++  BoardConfig b{};
++  b.name = kBoardName;
++  b.lcd.enabled = true;
++  b.lcd.controller = LcdController::Gc9a01;
++  b.lcd.width = 240;
++  b.lcd.height = 240;
++  b.lcd.round = true;
++  b.lcd.swap_xy = false;
++  b.lcd.mirror_x = true;   // upstream: esp_lcd_panel_mirror(panel, true, false)
++  b.lcd.mirror_y = false;
++  b.lcd.invert = true;     // upstream: esp_lcd_panel_invert_color(panel, true)
++  b.lcd.gap_x = 0;
++  b.lcd.gap_y = 0;
++  b.lcd.mosi = 2;
++  b.lcd.sclk = 4;
++  b.lcd.cs = 5;
++  b.lcd.dc = 47;
++  b.lcd.rst = 38;
++  b.lcd.backlight = 42;
++  b.lcd.backlight_invert = true;  // DISPLAY_BACKLIGHT_OUTPUT_INVERT, active-low
++  b.lcd.spi_mhz = 40;
++  b.i2c = {15, 14, 400000};
++  b.codec.enabled = true;
++  b.codec.mclk = 16;
++  b.codec.bclk = 9;
++  b.codec.ws = 45;
++  b.codec.dout = 8;
++  b.codec.din = 10;
++  b.codec.pa = 46;
++  // The microphones are analog and land on the ES8311's own ADC, so one codec
++  // handle covers both directions instead of a separate ES7210.
++  b.codec.mic = MicCodec::Es8311;
++  b.touch.enabled = true;
++  b.touch.controller = TouchController::Cst816;
++  b.touch.addr = 0x15;
++  b.touch.rst = 6;
++  b.touch.int_gpio = 12;
++  // The panel sits on its own I2C bus; the codec's (15/14) has nothing on it.
++  b.touch.bus_sda = 11;
++  b.touch.bus_scl = 7;
++  b.touch.width = 240;
++  b.touch.height = 240;
++  b.touch.mirror_x = true;  // keeps touch aligned with the mirrored panel
++  // R31/R32 divide VBAT by two. The charge signal is active-high here, the
++  // opposite of every other board, and there is no latch pin: power_off() is
++  // unavailable (the PWR key owns power-off).
++  b.latch_power = {true, 1, -1, 41, 42, 2, 4200, false};
++  b.latch_power.charging_active_high = true;
++  b.status_led = 48;
++  b.buttons = {0, -1, -1, -1};  // BOOT is TALK
++  b.talk_label = "BOOT";
++  b.cancel_label = "Swipe down";
++  return b;
++}
+ #elif CONFIG_HG_BOARD_CUSTOM
+ // Kconfig leaves a disabled bool undefined, so map each one explicitly.
+ #ifdef CONFIG_HG_LCD_SWAP_XY
+diff --git a/firmware/esp32/main/board.hpp b/firmware/esp32/main/board.hpp
+index a02b5c4..fbffd00 100644
+--- a/firmware/esp32/main/board.hpp
++++ b/firmware/esp32/main/board.hpp
+@@ -53,7 +53,7 @@ struct RgbPanelConfig {
+   RgbTimings timings{};   // panel scanout timings (per-datasheet)
+ };
+ 
+-enum class LcdController { St7789, Box3, CoreS3, St77916 };
++enum class LcdController { St7789, Box3, CoreS3, St77916, Gc9a01 };
+ 
+ struct LcdConfig {
+   bool enabled = false;
+@@ -137,6 +137,11 @@ struct TouchConfig {
+   uint8_t addr = 0x5A;
+   int rst = -1;
+   int int_gpio = -1;  // touch INT line; -1 when not wired (driver polls instead)
++  // Boards that wire the touchscreen to its own I2C bus rather than the codec's:
++  // the SpotPear 1.28" box puts the ES8311 on GPIO 15/14 and the panel on 11/7,
++  // so a probe of the codec bus finds no controller at any address. -1 shares
++  // the main bus (the usual case).
++  int bus_sda = -1, bus_scl = -1;
+   uint16_t width = 0, height = 0;
+   bool mirror_x = false, mirror_y = false;
+   int16_t offset_y = 0;  // subtracted from y when the UI starts below the panel's first row
+@@ -174,13 +179,19 @@ struct EncoderConfig {
+ // A battery behind a resistive divider, with a latch that keeps it powered.
+ struct LatchPowerConfig {
+   bool enabled = false;
+-  int adc = -1, enable = -1, charging = -1;  // adc -1: no battery voltage reading
++  // adc -1: no battery voltage reading. enable -1: the board has no latch pin
++  // (the SpotPear 1.28" box latches power in hardware), so power_off() cannot
++  // cut the supply and must report so instead of driving a bogus GPIO.
++  int adc = -1, enable = -1, charging = -1;
+   int backlight = -1;
+   // VBAT = VADC * ratio. Waveshare's LCD-1.54 divides by three; the T-Display-S3
+   // divides by two. Ignored when the ADC pin is -1.
+   int mv_ratio = 3;
+   uint16_t max_battery_mv = 4998;
+   bool power_off_supported = true;
++  // Most boards pull the charge status low while charging; the SpotPear 1.28"
++  // box drives it high.
++  bool charging_active_high = false;
+ };
+ 
+ struct BoardConfig {
+diff --git a/firmware/esp32/main/idf_component.yml b/firmware/esp32/main/idf_component.yml
+index fb6becd..88db8da 100644
+--- a/firmware/esp32/main/idf_component.yml
++++ b/firmware/esp32/main/idf_component.yml
+@@ -5,6 +5,7 @@ dependencies:
+   espressif/esp_codec_dev: "~1.5"
+   espressif/esp_lcd_st77916: "~2.0.2"
+   espressif/esp_lcd_ili9341: "^2.1.0"
++  espressif/esp_lcd_gc9a01: "^2.0.0"
+   espressif/esp_lcd_touch_tt21100: "^1"
+   espressif/esp_lcd_touch_gt911: "^1"
+   espressif/esp_lcd_touch_ft5x06: "^1"
+diff --git a/firmware/esp32/main/port.hpp b/firmware/esp32/main/port.hpp
+index f11c0ed..41811fa 100644
+--- a/firmware/esp32/main/port.hpp
++++ b/firmware/esp32/main/port.hpp
+@@ -448,6 +448,7 @@ class TouchInput {
+   i2c_master_dev_handle_t touch_dev_ = nullptr;
+   i2c_master_dev_handle_t key_dev_ = nullptr;
+   esp_lcd_touch_handle_t managed_touch_ = nullptr;
++  i2c_master_bus_handle_t touch_bus_ = nullptr;  // set when the panel has its own I2C bus
+   bool int_gated_ = false;                // FT5x06 with INT: read after an edge or with a finger down
+   std::atomic<bool> int_pending_{false};  // an edge since the last read
+   void* task_ = nullptr;                  // the touch task, woken by an edge
+diff --git a/firmware/esp32/main/port_display.cpp b/firmware/esp32/main/port_display.cpp
+index 4442f66..97bc7c8 100644
+--- a/firmware/esp32/main/port_display.cpp
++++ b/firmware/esp32/main/port_display.cpp
+@@ -11,6 +11,7 @@
+ #include "esp_heap_caps.h"
+ #include "esp_lcd_panel_ops.h"
+ #include "esp_lcd_panel_st7789.h"
++#include "esp_lcd_gc9a01.h"
+ #include "esp_log.h"
+ #include "panel_box3.hpp"
+ #include "panel_cores3.hpp"
+@@ -49,7 +50,8 @@ bool SpiDisplay::begin(const LcdConfig& cfg, i2c_master_bus_handle_t i2c_bus) {
+       ili9341 = true;
+     }
+   }
+-  controller_name_ = qspi ? "st77916" : ili9341 ? "ili9342" : "st7789";
++  controller_name_ = qspi ? "st77916" : ili9341 ? "ili9342" :
++                     cfg.controller == LcdController::Gc9a01 ? "gc9a01" : "st7789";
+   if (cfg.controller == LcdController::CoreS3) {
+     if (!i2c_bus) return false;
+     i2c_device_config_t device = {};
+@@ -171,6 +173,8 @@ bool SpiDisplay::begin(const LcdConfig& cfg, i2c_master_bus_handle_t i2c_bus) {
+       panel_cfg.vendor_config = &vendor;
+     }
+     if (!esp_ok(esp_lcd_new_panel_ili9341(io_, &panel_cfg, &panel_), TAG, "esp_lcd_new_panel_ili9341")) return false;
++  } else if (cfg.controller == LcdController::Gc9a01) {
++    if (!esp_ok(esp_lcd_new_panel_gc9a01(io_, &panel_cfg, &panel_), TAG, "esp_lcd_new_panel_gc9a01")) return false;
+   } else {
+     if (!esp_ok(esp_lcd_new_panel_st7789(io_, &panel_cfg, &panel_), TAG, "esp_lcd_new_panel_st7789")) return false;
+   }
+diff --git a/firmware/esp32/main/port_latch_power.cpp b/firmware/esp32/main/port_latch_power.cpp
+index 762bf58..7708d5d 100644
+--- a/firmware/esp32/main/port_latch_power.cpp
++++ b/firmware/esp32/main/port_latch_power.cpp
+@@ -8,12 +8,17 @@ namespace hgp {
+ 
+ bool LatchPower::begin(const LatchPowerConfig& cfg) {
+   cfg_ = cfg;
+-  // Set the output latch before enabling the pin to avoid a low pulse at boot.
+-  if (gpio_set_level(static_cast<gpio_num_t>(cfg.enable), 1) != ESP_OK) return false;
+-  gpio_config_t output = {};
+-  output.pin_bit_mask = 1ULL << cfg.enable;
+-  output.mode = GPIO_MODE_OUTPUT;
+-  if (gpio_config(&output) != ESP_OK) return false;
++  // Not every board has a latch pin: the SpotPear 1.28" box keeps power in
++  // hardware, so there is nothing to drive and power_off() must refuse. A -1
++  // would also shift to a bogus pin mask and collide with the flash bus.
++  if (cfg.enable >= 0) {
++    // Set the output latch before enabling the pin to avoid a low pulse at boot.
++    if (gpio_set_level(static_cast<gpio_num_t>(cfg.enable), 1) != ESP_OK) return false;
++    gpio_config_t output = {};
++    output.pin_bit_mask = 1ULL << cfg.enable;
++    output.mode = GPIO_MODE_OUTPUT;
++    if (gpio_config(&output) != ESP_OK) return false;
++  }
+   if (cfg.backlight >= 0) {
+     gpio_reset_pin(static_cast<gpio_num_t>(cfg.backlight));
+     gpio_set_direction(static_cast<gpio_num_t>(cfg.backlight), GPIO_MODE_OUTPUT);
+@@ -62,7 +67,10 @@ bool LatchPower::begin(const LatchPowerConfig& cfg) {
+ std::optional<hg::PowerStatus> LatchPower::read() {
+   hg::PowerStatus status;
+   // Not every board brings the charging signal out to a pin.
+-  if (cfg_.charging >= 0) status.charging = gpio_get_level(static_cast<gpio_num_t>(cfg_.charging)) == 0;
++  if (cfg_.charging >= 0) {
++    const bool level = gpio_get_level(static_cast<gpio_num_t>(cfg_.charging)) != 0;
++    status.charging = cfg_.charging_active_high ? level : !level;
++  }
+   if (!calibration_) return status;
+   int total = 0;
+   for (int i = 0; i < 8; ++i) {
+@@ -82,7 +90,7 @@ std::optional<hg::PowerStatus> LatchPower::read() {
+ }
+ 
+ bool LatchPower::power_off() {
+-  if (!cfg_.power_off_supported) return false;
++  if (!cfg_.power_off_supported || cfg_.enable < 0) return false;
+   // Supported boards use a battery latch that disconnects the supply. USB may
+   // still power the device independently.
+   return gpio_set_level(static_cast<gpio_num_t>(cfg_.enable), 0) == ESP_OK;
+diff --git a/firmware/esp32/main/port_touch.cpp b/firmware/esp32/main/port_touch.cpp
+index 4d9e298..8a9ff01 100644
+--- a/firmware/esp32/main/port_touch.cpp
++++ b/firmware/esp32/main/port_touch.cpp
+@@ -30,6 +30,25 @@ bool TouchInput::begin(const TouchConfig& touch, const ExpanderKeyConfig& key, c
+   if (!bus) return false;
+   touch_ = touch;
+   key_ = key;
++  // Some boards give the touchscreen its own I2C bus: the SpotPear 1.28" box
++  // puts the ES8311 on GPIO 15/14 and the panel on GPIO 11/7, so the codec's
++  // bus has no controller on it at any address. Bring up a second master bus.
++  if (touch.enabled && touch.bus_sda >= 0 && touch.bus_scl >= 0) {
++    i2c_master_bus_config_t touch_bus_cfg = {};
++    touch_bus_cfg.i2c_port = I2C_NUM_1;
++    touch_bus_cfg.sda_io_num = static_cast<gpio_num_t>(touch.bus_sda);
++    touch_bus_cfg.scl_io_num = static_cast<gpio_num_t>(touch.bus_scl);
++    touch_bus_cfg.clk_source = I2C_CLK_SRC_DEFAULT;
++    touch_bus_cfg.glitch_ignore_cnt = 7;
++    touch_bus_cfg.flags.enable_internal_pullup = true;
++    if (i2c_new_master_bus(&touch_bus_cfg, &touch_bus_) == ESP_OK) {
++      bus = touch_bus_;
++    } else {
++      touch_bus_ = nullptr;
++      ESP_LOGW(TAG, "touch I2C bus on SDA %d / SCL %d failed; falling back to the main bus",
++               touch.bus_sda, touch.bus_scl);
++    }
++  }
+   if (touch.enabled && touch.controller == TouchController::Ft5x06) {
+     esp_lcd_panel_io_i2c_config_t io_cfg = {};
+     io_cfg.dev_addr = ESP_LCD_TOUCH_IO_I2C_FT5x06_ADDRESS;
