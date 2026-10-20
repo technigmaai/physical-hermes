@@ -1,6 +1,6 @@
 {
   "name": "Hermes Gadget",
-  "version": "0.2.0-rounded.1",
+  "version": "0.2.0-sessions.1",
   "builds": [
     {
       "board": "esp32s3-touch-amoled-216",
@@ -13,14 +13,14 @@
       "flash_size": "16MB",
       "psram": "octal",
       "image": {
-        "path": "hermes-gadget-esp32s3-touch-amoled-216-0.2.0-rounded.1.bin",
-        "size": 1508256,
-        "sha256": "0e4426353ec66bb2fc3f584fe8bc47a21ee1aee71edb179b7bf20f5630291aef"
+        "path": "hermes-gadget-esp32s3-touch-amoled-216-0.2.0-sessions.1.bin",
+        "size": 1513776,
+        "sha256": "3a1274fdbcc46ba9042e711a96c54ffbd6299ef48a867e57b1cfe25b2834523b"
       },
       "app": {
-        "path": "hermes-gadget-esp32s3-touch-amoled-216-0.2.0-rounded.1-app.bin",
-        "size": 1377184,
-        "sha256": "62bdeed5cf2b1b68a785f875dfeed5bc1eea91239ab76839055cf0774a46be1b"
+        "path": "hermes-gadget-esp32s3-touch-amoled-216-0.2.0-sessions.1-app.bin",
+        "size": 1382704,
+        "sha256": "9049eb937de7b6074b859b152e3b41228d769dc5f3773807b0523ae5565e8359"
       },
       "settings": {
         "offset": 36864,
@@ -29,7 +29,7 @@
     }
   ],
   "licenses": {
-    "path": "hermes-gadget-0.2.0-rounded.1-licenses.zip",
+    "path": "hermes-gadget-0.2.0-sessions.1-licenses.zip",
     "size": 247685,
     "sha256": "d5459d1a0c1b1a600f193cb37c421ddf9bc34cffb0eae302c45d07a433ae099e"
   }

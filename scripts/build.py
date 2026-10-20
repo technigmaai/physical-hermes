@@ -13,7 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SDK_COMMIT = "63e664c9920321b44390e8161535008e4f73513b"
 SDK = ROOT / "sdk"
-PATCH = ROOT / "firmware" / "waveshare-216" / "rounded-layout.patch"
+PATCH = ROOT / "firmware" / "waveshare-216" / "device-customizations.patch"
 
 
 def prepare_source():

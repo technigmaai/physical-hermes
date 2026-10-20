@@ -1,21 +1,32 @@
 {
   "repository": "https://github.com/Adolanium/hermes-gadget-sdk",
   "commit": "63e664c9920321b44390e8161535008e4f73513b",
-  "version": "0.2.0-rounded.1",
+  "version": "0.2.0-sessions.1",
   "environment": "esp32s3-touch-amoled-216",
   "board_tag": "esp32s3-touch-amoled-2.16",
-  "origin": "Local PlatformIO build of pinned SDK plus rounded-layout.patch",
-  "patch": "rounded-layout.patch",
-  "patch_sha256": "3ab7f948178cb5babc7544855a02339dab056549c8040fcf44e57b7bc53eede4",
+  "origin": "Local PlatformIO build of pinned SDK plus device-customizations.patch",
+  "patch": "device-customizations.patch",
+  "patch_sha256": "516dca38c7126ee7b501c4d2347c8358c1bd73406720e7d72a833174ab77d7b8",
   "platformio": "6.2.0",
   "platform_espressif32": "8.0.0",
   "esp_idf": "6.1.0",
   "toolchain_xtensa_esp_elf": "15.2.0+20251204",
-  "license_archive": "hermes-gadget-0.2.0-rounded.1-licenses.zip",
+  "license_archive": "hermes-gadget-0.2.0-sessions.1-licenses.zip",
   "upstream_ci_baseline": "UPSTREAM-CI.json",
   "host_core_tests": {
-    "cases": 253,
+    "cases": 265,
     "failed": 0
   },
-  "layout": "48px header/footer corner inset, full 480x480 framebuffer"
+  "layout": "48px header/footer corner inset, full 480x480 framebuffer",
+  "controls": "BOOT talk/select; GPIO18 +/KEY cancel/double-new/hold Sessions; PWR sleep and PMIC shutdown",
+  "session_browser": "20 device/profile-scoped recent conversations; native Hermes /resume on the matching Mac plugin",
+  "host_plugin_tests": {
+    "cases": 51,
+    "failed": 0,
+    "coverage": "adapter/simulator round trip, device/profile scope, actual Hermes /resume and transcript restoration"
+  },
+  "flash_tool_tests": {
+    "cases": 4,
+    "failed": 0
+  }
 }

@@ -10,7 +10,7 @@ This is a render from the production UI code with an approximate physical corner
 
 ## Rebuild
 
-`scripts/build.py` exports the pinned upstream SDK into an ignored, generated directory under `build/`, applies [`rounded-layout.patch`](../firmware/waveshare-216/rounded-layout.patch), then compiles and packages only this board. The `sdk/` submodule stays unchanged. Use `--prepare-only` to inspect or run host tests against the generated source before compiling firmware.
+`scripts/build.py` exports the pinned upstream SDK into an ignored, generated directory under `build/`, applies [`device-customizations.patch`](../firmware/waveshare-216/device-customizations.patch), then compiles and packages only this board. The `sdk/` submodule stays unchanged. Use `--prepare-only` to inspect or run host tests against the generated source before compiling firmware.
 
 The overlay contains the board setting, footer fitting, firmware version, a changelog entry and a pixel regression test. The test renders a long device title and footer and checks that both bars have no foreground pixels in the unsafe side strips. The full 253-case portable core suite, including circular-display behavior, passes.
 
@@ -20,7 +20,9 @@ Use the app-only image through the matching Hermes plugin:
 
 ```bash
 hermes gadget devices
-hermes gadget update DEVICE_ID firmware/waveshare-216/hermes-gadget-esp32s3-touch-amoled-216-0.2.0-rounded.1-app.bin
+hermes gadget update DEVICE_ID firmware/waveshare-216/hermes-gadget-esp32s3-touch-amoled-216-0.2.0-sessions.1-app.bin
 ```
 
 Replace `DEVICE_ID` with your board's ID. This uses the existing OTA slots and keeps Wi-Fi, device identity and pairing. The first-install `scripts/flash.py` command writes a merged image and clears settings; use it only for first installation or recovery.
+
+The current device overlay also includes [session browsing and button controls](7-sessions-and-buttons.md), introduced after the original layout update.

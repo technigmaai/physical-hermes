@@ -44,3 +44,13 @@ After this installation the owner confirmed Wi-Fi setup, pairing and real intera
 - Reconnection: Hermes reports `0.2.0-rounded.1` under the existing device identity.
 
 This remains partial hardware validation. Exact touch coordinates, audio quality, battery behavior, forced network loss, OTA rollback and a long session remain unverified. The port stays experimental.
+
+## Sessions and buttons update: 0.2.0-sessions.1
+
+- Source: the same pinned SDK plus `device-customizations.patch`, which includes the earlier corner layout and the Sessions firmware/plugin extension. The pinned SDK remains clean. The generated build source matches all 21 changed source files.
+- Firmware: the exact 2.16-inch profile built successfully on PlatformIO 6.2.0 / Espressif32 8.0.0 / ESP-IDF 6.1.0. App size 1,382,704 bytes, leaving 31.9% of each 2,031,616-byte OTA app slot free. Manifest and image hashes pass the flash helper's integrity checks.
+- Core tests: 265 cases pass. Coverage includes physical KEY timing, consumed wake presses, Sessions opening/closing, button and touch selection, stale replies, failures, and screen sleep while the browser is idle.
+- UI: the real C++ renderer generated the 480×480 Sessions preview with example conversations; its rounded-corner aperture is an approximate preview mask. This does not measure physical touch accuracy.
+- Host: all 51 plugin/adapter integration tests and four flash-tool checks pass. Tests exercise the real Hermes SessionDB, real `/resume` command and SessionStore, including restoration of an older transcript and rejection of another device's session. A read-only query of this owner's Mac found two device-owned conversations and exactly one current route; no chat text was published.
+- Deployment: installed the matching plugin, gracefully restarted the gateway, and sent the app-only image through `hermes gadget update`. The device reconnected as the same identity on `0.2.0-sessions.1`. No factory backup or settings erase was performed.
+- Physical validation of the new KEY gestures and session selection is pending the owner's check. Earlier user-confirmed display layout and voice interaction remain recorded above. Full hardware verification, battery calibration, rollback, and extended runtime remain outstanding.

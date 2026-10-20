@@ -4,7 +4,13 @@
 
 **Hold the button marked BOOT, speak, release.** Use the label on your ESP32-S3-Touch-AMOLED-2.16; its button positions differ from the original robot.
 
-Replies appear on screen and are spoken aloud at the same time. Swipe down on the screen to cancel a reply mid-sentence.
+Replies appear on screen and are spoken aloud at the same time. Click +/KEY or swipe down to cancel a reply.
+
+## Conversations
+
+Double-click **+/KEY** to start a fresh conversation. Hold **+/KEY for two seconds** to open Sessions. Click +/KEY to move through the list and BOOT to select, or swipe and tap the screen. Hold +/KEY again to return without switching.
+
+See [Sessions and buttons](7-sessions-and-buttons.md) for the full map and matching Mac plugin installation.
 
 ## It's a real Hermes
 
@@ -36,7 +42,7 @@ Use a screen timeout to reduce display power. This profile does not enable CPU l
 
 ## Over-the-air updates
 
-Once connected, the plugin can send an app-only image for this exact board using `hermes gadget update`. Keep a USB recovery path and the original backup. OTA and rollback still require physical validation; never send the original 1.28-inch image to this board.
+Once connected, the plugin can send an app-only image for this exact board using `hermes gadget update`. Keep a USB recovery path. App-only OTA has been exercised on this device; rollback still requires physical validation; never send the original 1.28-inch image to this board.
 
 ## Speech
 

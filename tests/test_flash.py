@@ -19,7 +19,7 @@ class FlashChecks(unittest.TestCase):
     def test_packaged_image(self):
         with contextlib.redirect_stdout(io.StringIO()):
             image = flash.check_image()
-        self.assertEqual(image.stat().st_size, 1508256)
+        self.assertEqual(image.stat().st_size, 1513776)
 
     def test_corruption_rejected_before_usb(self):
         with tempfile.TemporaryDirectory() as directory:

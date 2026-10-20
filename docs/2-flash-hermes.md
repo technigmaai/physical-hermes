@@ -37,8 +37,8 @@ The script defaults to esptool's bundled v1 stub after v2 read transfers stalled
 After a verified backup, manual installation is also possible:
 
 ```bash
-python -m esptool --chip esp32s3 --port /dev/cu.usbmodem83201 --baud 460800 write-flash 0x0 firmware/waveshare-216/hermes-gadget-esp32s3-touch-amoled-216-0.2.0-rounded.1.bin
-python -m esptool --chip esp32s3 --port /dev/cu.usbmodem83201 verify-flash 0x0 firmware/waveshare-216/hermes-gadget-esp32s3-touch-amoled-216-0.2.0-rounded.1.bin
+python -m esptool --chip esp32s3 --port /dev/cu.usbmodem83201 --baud 460800 write-flash 0x0 firmware/waveshare-216/hermes-gadget-esp32s3-touch-amoled-216-0.2.0-sessions.1.bin
+python -m esptool --chip esp32s3 --port /dev/cu.usbmodem83201 verify-flash 0x0 firmware/waveshare-216/hermes-gadget-esp32s3-touch-amoled-216-0.2.0-sessions.1.bin
 ```
 
 If USB download fails, hold **BOOT**, reconnect USB while holding it, then release and check the port again. Keep power connected throughout backup and flashing. If a backup stops, do not proceed to writing; retry with a stable cable. A ROM read can help with stub-transfer issues:

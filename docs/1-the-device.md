@@ -15,10 +15,10 @@ Target: Waveshare / SpotPear **ESP32-S3-Touch-AMOLED-2.16**, Waveshare SKU 33969
 | Microphones | ES7210 ADC, MIC1/MIC2 |
 | Shared I2S | MCLK 42, BCLK 9, WS 45, speaker DOUT 8, microphone DIN 10 |
 | Power | AXP2101 at `0x34`; charging and supply settings preserved |
-| Buttons | BOOT GPIO 0: talk; PWR short press via AXP2101: screen sleep |
+| Buttons | BOOT GPIO 0: talk/select; +/KEY (KEY3) GPIO 18: cancel/session navigation; PWR via AXP2101: screen sleep/shutdown |
 | Console | USB Serial/JTAG, 115200 |
 
-The SDK uses a 480×480 PSRAM framebuffer and its actual AMOLED driver. Scaling the old 240×240 robot image would not work. The GPIO18 key, IMU, RTC and SD slot are not exposed by this profile.
+The SDK uses a 480×480 PSRAM framebuffer and its actual AMOLED driver. Scaling the old 240×240 robot image would not work. The IMU, RTC and SD slot are not exposed by this profile. See [the button map](7-sessions-and-buttons.md).
 
 Sources:
 

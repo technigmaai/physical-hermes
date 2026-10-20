@@ -1,0 +1,1350 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index b2eea38..7f5ee85 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -2,8 +2,14 @@
+ 
+ ## Unreleased
+ 
++- Physical Hermes 2.16-inch overlay: hold +/KEY for a touch/button session browser; list this device's recent history and resume through Hermes on the host. PWR can sleep the idle browser.
++
+ ### Hardware and setup
+ 
++- AMOLED-2.16: enable the physical +/KEY (GPIO18) as CANCEL; a single click cancels and a double-click starts a fresh Hermes session. Double-click behavior is opt-in per board and excludes touch gestures, settings and approval prompts.
++
++- AMOLED-2.16: keep header labels and footer hints clear of the rounded visible screen corners with 48-pixel side insets. The framebuffer and central content stay 480×480. Footer text now respects a rectangular panel's existing corner inset.
++
+ - Board support for the Waveshare ESP32-S3-Knob-Touch-LCD-1.8: round 360×360 SH8601 QSPI LCD (Espressif's `esp_lcd_sh8601`), CST816S touch, one PDM microphone, a rotary encoder that scrolls, ESP32-S3R8 with 16 MB flash and 8 MB PSRAM. Hold the screen or BOOT to talk. The port doesn't drive the board's headphone DAC, so replies are shown as text and not played. The panel's initialization table comes from Waveshare's ESP-IDF demo. Adds a `sim-360x360-knob` simulator profile. Experimental: a contributor test showed the display, hold-to-talk touch and microphone capture through a full voice turn; the full checklist is not completed. Contributed by @Delphus123.
+ - With `latch_power.usb_external_power`, the latch power driver reports external power while the charging signal is on or a USB host is connected to the S3's own USB port. Boards with a battery latch and no USB-status input could not tell battery from USB, so Wi-Fi modem sleep never applied on battery. The Spotpear muma now reports its battery voltage (divider by two on GPIO 1) and charging signal (GPIO 41), and both the muma and the Waveshare LCD-1.54 report external power. Contributed by Luiz Gustavo Saraiva (@luizgustavosaraiva).
+ - Board support for Espressif's ESP-VoCat, v1.2 only: round 360×360 ST77916 QSPI panel, CST816S touch, ES7210 microphones, ES8311 speaker output through an NS4150B amplifier, 16 MB flash and 16 MB PSRAM. BOOT talks as well as the screen. The panel takes Espressif's own start-up table from the ESP-VoCat BSP, so ST77916 boards can now choose their table (`lcd.st77916_panel`) instead of having it picked by the Waveshare panel ID, and boards can switch GPIO-driven supplies on at boot (`power_rails`), which the VoCat needs for its LCD/SD rail and codec supply. The BMI270 IMU, BQ27220 fuel gauge, head touch pads and LED are not used yet. Experimental: a contributor smoke test on USB power covered boot, display, both codecs, touch, Wi-Fi, pairing and a hold-to-talk voice turn; the full checklist is not completed. Contributed by @dreamhunter02.
+diff --git a/docs/protocol.md b/docs/protocol.md
+index 2c5d078..dd6455c 100644
+--- a/docs/protocol.md
++++ b/docs/protocol.md
+@@ -285,3 +285,19 @@ Boards whose firmware enables Bluetooth (none yet; see [hardware validation](har
+ - `proto` is a single integer, and a server rejects versions it does not speak.
+ - Adding optional fields or new message types does not change the version. Receivers ignore unknown types and fields.
+ - Changing the meaning of an existing field does.
++
++
++## Physical Hermes session browser extension
++
++Paired 2.16-inch devices may request `{"type":"session.list","id":"s1"}`.
++The matching plugin replies with the same type/id and `sessions`, containing up to
++20 `{id,title,detail,current}` rows scoped to the device/profile. `detail` is a
++human-readable activity date; errors include `error` and an empty list.
++
++`{"type":"session.select","id":"s2","session":"EXACT_LISTED_ID"}` requests a
++switch through Hermes `/resume`. Only recently listed IDs are accepted; normal
++Hermes ownership and active-turn rules still apply. The correlated reply is
++`{"type":"session.selected","id":"s2","ok":true}` or `ok:false,error:"..."`.
++The device ignores stale replies and times out after 10 seconds. Opening or
++closing the browser sends no conversation reset. Firmware and Mac plugin must
++both include the Physical Hermes overlay; older peers do not implement this extension.
+diff --git a/firmware/core/include/hg/app.hpp b/firmware/core/include/hg/app.hpp
+index 0424415..47f84b7 100644
+--- a/firmware/core/include/hg/app.hpp
++++ b/firmware/core/include/hg/app.hpp
+@@ -42,6 +42,7 @@ struct DeviceProfile {
+   float vad_min_rms = 500.0f;  // tap mode: the quietest block that counts as speech (a quiet mic wants less)
+   uint32_t speaker_rate = 16000;
+   bool has_cancel_button = true;
++  bool cancel_double_new_session = false;  // physical CANCEL only; touch keeps its gestures
+   bool has_scroll_buttons = false;
+   std::string talk_label = "TALK";
+   std::string cancel_label = "CANCEL";
+@@ -89,6 +90,11 @@ class App {
+   void on_transport_binary(const uint8_t* data, size_t len);
+   void on_transport_closed(std::string_view reason);
+   void on_button(Button button, bool pressed);
++  void on_cancel_button(bool pressed);  // debounced physical CANCEL, with optional double-click
++  bool open_sessions();
++  bool sessions_open() const { return overlay_ == Overlay::Sessions; }
++  void on_session_tap(int x, int y);
++  void on_session_scroll(int delta);
+   void on_mic_samples(const int16_t* samples, size_t count);
+ 
+   // --- device features ------------------------------------------------------
+@@ -203,6 +209,9 @@ class App {
+   void h_prompt(const json::Value& m);
+   void h_prompt_close(const json::Value& m);
+   void h_dashboard(const json::Value& m);
++  void h_session_list(const json::Value& m);
++  void h_session_selected(const json::Value& m);
++  void select_session();
+   void h_ota_offer(const json::Value& m);
+   void h_ota_begin(const json::Value& m);
+   void h_ota_end(const json::Value& m);
+@@ -359,6 +368,9 @@ class App {
+   uint32_t reply_until_ = 0;  // reply text shown on the Ready screen until then
+   bool cancel_held_ = false;
+   bool cancel_long_fired_ = false;
++  bool cancel_physical_ = false;
++  bool cancel_click_armed_ = false;
++  uint32_t cancel_click_at_ = 0;
+   uint32_t cancel_down_at_ = 0;
+   std::string status_;
+   std::string user_echo_;
+@@ -372,7 +384,7 @@ class App {
+   uint32_t id_counter_ = 0;
+ 
+   // overlays
+-  enum class Overlay : uint8_t { None, Card, Image, Dashboard };
++  enum class Overlay : uint8_t { None, Card, Image, Dashboard, Sessions };
+   Overlay overlay_ = Overlay::None;
+   uint32_t overlay_until_ = 0;  // 0 = until dismissed
+   std::string card_title_, card_body_;
+@@ -389,6 +401,12 @@ class App {
+   int dash_scroll_ = 0;
+   bool can_open_dashboard() const { return profile_.has_cancel_button || profile_.touch_screen; }
+ 
++  std::vector<SessionRow> sessions_;
++  int session_selected_ = 0, session_scroll_ = 0;
++  std::string session_request_, session_error_;
++  uint32_t session_requested_at_ = 0;
++  bool session_loading_ = false, session_selecting_ = false;
++
+   // a yes/no question from Hermes (confirmations, command approvals)
+   std::string prompt_id_, prompt_title_, prompt_text_;
+   uint32_t prompt_since_ = 0;
+diff --git a/firmware/core/include/hg/hal.hpp b/firmware/core/include/hg/hal.hpp
+index f0993eb..5006bff 100644
+--- a/firmware/core/include/hg/hal.hpp
++++ b/firmware/core/include/hg/hal.hpp
+@@ -29,7 +29,7 @@ struct DisplayInfo {
+   // Multiplier on the UI's automatic font scale, for panels small enough that
+   // the automatic pick reads as too small. The UI clamps the final scale.
+   uint8_t font_scale = 1;
+-  // Extra left and right padding for the top bar's text, for a rectangular
++  // Extra left and right padding for the top and bottom bars' text, for a rectangular
+   // panel with rounded corners.
+   uint8_t corner_inset = 0;
+   // An OLED/AMOLED panel: unlit pixels draw no power, so the background is
+diff --git a/firmware/core/include/hg/touch.hpp b/firmware/core/include/hg/touch.hpp
+index 050815d..2508508 100644
+--- a/firmware/core/include/hg/touch.hpp
++++ b/firmware/core/include/hg/touch.hpp
+@@ -38,7 +38,7 @@ class TouchGestures {
+   void tick(uint32_t now_ms);
+ 
+  private:
+-  enum class State : uint8_t { Idle, Pending, Settings, Talk, Swipe, Ignored };
++  enum class State : uint8_t { Idle, Pending, Settings, Talk, Swipe, Sessions, Ignored };
+   void press(Button b);
+   void release(Button b);
+ 
+@@ -47,6 +47,8 @@ class TouchGestures {
+   State state_ = State::Idle;
+   int x0_ = 0, y0_ = 0;
+   uint32_t t0_ = 0;
++  int session_y_ = 0;
++  bool session_moved_ = false;
+ };
+ 
+ }  // namespace hg
+diff --git a/firmware/core/include/hg/ui.hpp b/firmware/core/include/hg/ui.hpp
+index 2af2960..4a026ad 100644
+--- a/firmware/core/include/hg/ui.hpp
++++ b/firmware/core/include/hg/ui.hpp
+@@ -35,6 +35,7 @@ enum class Screen : uint8_t {
+   Updating,  // installing a firmware update
+   Settings,
+   Setup,
++  Sessions,  // selectable conversation history
+   Dashboard,  // Hermes's sessions and the user's status tiles (docs/protocol.md#dashboard)
+ };
+ 
+@@ -51,6 +52,11 @@ struct DashRow {
+   bool heading = false;
+ };
+ 
++struct SessionRow {
++  std::string id, title, detail;
++  bool current = false;
++};
++
+ struct UiModel {
+   Screen screen = Screen::Boot;
+   Link link = Link::Offline;
+@@ -84,6 +90,8 @@ struct UiModel {
+   const qr::Code* qr = nullptr;
+   // Dashboard screen: its rows, drawn from `scroll` (0 = the top).
+   std::vector<DashRow> dash;
++  std::vector<SessionRow> sessions;
++  int selected = 0;
+ };
+ 
+ struct UiLayout {
+@@ -119,6 +127,8 @@ class Ui {
+   int body_rows(const UiModel& m) const;
+   // Dashboard rows that fit the content band.
+   int dash_rows() const;
++  int session_rows() const;
++  int session_hit(int x, int y) const;
+   bool title_hit(int x, int y) const {
+     const int left = ox_ + (info_.width - layout_.title_w) / 2;
+     return x >= left && x < left + layout_.title_w && y >= oy_ && y < oy_ + layout_.top_h;
+@@ -132,6 +142,7 @@ class Ui {
+   void draw_header(Canvas& c, const UiModel& m);
+   void draw_content(Canvas& c, const UiModel& m);
+   bool draw_qr(Canvas& c, const UiModel& m, int y0, int y1);
++  void draw_sessions(Canvas& c, const UiModel& m, int y0, int y1);
+   void draw_dashboard(Canvas& c, const UiModel& m, int y0, int y1);
+   void draw_bottom(Canvas& c, const UiModel& m);
+   void draw_indicator(Canvas& c, const UiModel& m, int cx, int cy, int r);
+diff --git a/firmware/core/src/app.cpp b/firmware/core/src/app.cpp
+index 388c142..977cb62 100644
+--- a/firmware/core/src/app.cpp
++++ b/firmware/core/src/app.cpp
+@@ -22,6 +22,8 @@ constexpr uint32_t kSettleAfterReplyMs = 6000;
+ constexpr uint32_t kReplyLingerMs = 20000;    // reply text stays up this long before the mascot returns
+ constexpr uint32_t kNewSessionHoldMs = 2000;  // hold CANCEL this long to start a new session
+ constexpr uint32_t kNewSessionHintMs = 600;   // ...and show the countdown after this long
++constexpr uint32_t kCancelDoubleClickMs = 500;
++constexpr uint32_t kCancelClickMaxMs = 400;
+ constexpr uint32_t kPromptArmMs = 600;        // presses this soon after a question appears don't answer it
+ constexpr uint32_t kPageLineMs = 1000;        // long text: reading time per line before the next page
+ constexpr uint32_t kManualScrollPauseMs = 15000;  // UP/DOWN pauses automatic paging this long
+@@ -86,6 +88,7 @@ const App::Route App::kRoutes[] = {
+     {"transcript", &App::h_transcript},   {"prompt", &App::h_prompt},
+     {"prompt.close", &App::h_prompt_close}, {"ota.offer", &App::h_ota_offer},
+     {"ota.begin", &App::h_ota_begin},     {"ota.end", &App::h_ota_end},
++    {"session.list", &App::h_session_list}, {"session.selected", &App::h_session_selected},
+     {"ota.abort", &App::h_ota_abort},     {"dashboard", &App::h_dashboard},
+ };
+ 
+@@ -792,7 +795,35 @@ void App::h_error(const json::Value& m) {
+ // --------------------------------------------------------------------------
+ // Input
+ 
++void App::on_cancel_button(bool pressed) {
++  // Keep physical double-clicks separate from touchscreen swipes and expander
++  // keys. A first click still cancels immediately; the second starts a session.
++  cancel_physical_ = true;
++  const bool eligible = profile_.cancel_double_new_session && !sessions_open() && can_talk() &&
++      !settings_open() && !prompt_showing() && !wifi_setup_open() && !phone_pairing_;
++  if (!eligible) cancel_click_armed_ = false;
++  const bool held = cancel_held_;
++  const bool long_press = cancel_long_fired_;
++  const uint32_t duration = now() - cancel_down_at_;
++  on_button(Button::Cancel, pressed);
++  if (pressed) return;
++  cancel_physical_ = false;
++  if (!eligible || !held || long_press || duration > kCancelClickMaxMs) {
++    cancel_click_armed_ = false;
++    return;
++  }
++  if (cancel_click_armed_ && now() - cancel_click_at_ <= kCancelDoubleClickMs) {
++    cancel_click_armed_ = false;
++    start_new_session();
++    update_model();
++  } else {
++    cancel_click_armed_ = true;
++    cancel_click_at_ = now();
++  }
++}
++
+ void App::on_button(Button button, bool pressed) {
++  if (button != Button::Cancel && pressed) cancel_click_armed_ = false;
+   if (ui_ && bench_ == Bench::None) ui_->mark_input();
+   if (!wifi_setup_text_.empty()) {
+     if (button == Button::Cancel && !pressed) close_wifi_setup();
+@@ -826,6 +857,16 @@ void App::on_button(Button button, bool pressed) {
+     update_model();
+     return;
+   }
++  if (sessions_open() && !prompt_showing() && !ota_busy()) {
++    if (button == Button::Cancel) {
++      if (pressed) { cancel_held_ = true; cancel_down_at_ = now(); cancel_long_fired_ = false; }
++      else { cancel_held_ = false; if (!cancel_long_fired_) on_session_scroll(1); }
++    } else if (button == Button::Talk && !pressed) select_session();
++    else if (pressed && (button == Button::Up || button == Button::Down))
++      on_session_scroll(button == Button::Up ? -1 : 1);
++    update_model();
++    return;
++  }
+   switch (button) {
+     case Button::Talk:
+       if (pressed) {
+@@ -871,7 +912,7 @@ void App::on_button(Button button, bool pressed) {
+       } else if (mode_ == Mode::Listening) cancel_listening("cancelled");
+       else if (overlay_ != Overlay::None) dismiss_overlay();
+       else if (mode_ == Mode::Thinking || mode_ == Mode::Responding) cancel_turn();
+-      else if (dashboard_ready_ && paired_) {
++      else if (dashboard_ready_ && paired_ && !(cancel_physical_ && profile_.cancel_double_new_session)) {
+         overlay_ = Overlay::Dashboard;
+         overlay_until_ = 0;
+         dash_scroll_ = 0;
+@@ -960,6 +1001,85 @@ void App::cancel_listening(std::string_view why) {
+   mode_since_ = now();
+ }
+ 
++bool App::open_sessions() {
++  if (!can_talk() || prompt_showing() || settings_open() || ota_busy() ||
++      wifi_setup_open() || phone_pairing_ || mode_ == Mode::Listening) return false;
++  wake_display();
++  dismiss_overlay();
++  overlay_ = Overlay::Sessions;
++  overlay_until_ = 0;
++  session_selected_ = session_scroll_ = 0;
++  sessions_ = {{"", "+ New conversation", "Start fresh", false}};
++  session_error_.clear();
++  session_request_ = next_id('s');
++  session_loading_ = true;
++  session_selecting_ = false;
++  session_requested_at_ = now();
++  send(proto::message("session.list").set("id", session_request_));
++  update_model();
++  return true;
++}
++
++void App::h_session_list(const json::Value& m) {
++  if (!sessions_open() || !session_loading_ || m["id"].str_or("") != session_request_) return;
++  session_loading_ = false;
++  session_error_ = m["error"].as_string().substr(0, 80);
++  sessions_.resize(1);
++  const auto& rows = m["sessions"];
++  for (size_t i = 0; i < rows.size() && i < 20; ++i) {
++    const auto& row = rows[i];
++    if (row["id"].as_string().empty()) continue;
++    const bool current = row["current"].as_bool();
++    sessions_.push_back({row["id"].as_string().substr(0, 128),
++        row["title"].as_string().substr(0, 160),
++        (current ? "Current | " : "") + row["detail"].as_string().substr(0, 80), current});
++  }
++  if (sessions_.size() == 1 && session_error_.empty()) sessions_[0].detail = "No saved conversations yet";
++}
++
++void App::on_session_scroll(int delta) {
++  if (!sessions_open() || session_selecting_) return;
++  const int count = static_cast<int>(sessions_.size());
++  session_selected_ = (session_selected_ + delta % count + count) % count;
++  const int rows = ui_ ? ui_->session_rows() : 4;
++  if (session_selected_ < session_scroll_) session_scroll_ = session_selected_;
++  if (session_selected_ >= session_scroll_ + rows) session_scroll_ = session_selected_ - rows + 1;
++  update_model();
++}
++
++void App::on_session_tap(int x, int y) {
++  if (!sessions_open() || !ui_ || wake_display() || prompt_showing() || ota_busy()) return;
++  if (ui_->title_hit(x, y)) { dismiss_overlay(); update_model(); return; }
++  const int row = ui_->session_hit(x, y);
++  if (row < 0 || row + session_scroll_ >= static_cast<int>(sessions_.size())) return;
++  session_selected_ = row + session_scroll_;
++  select_session();
++  update_model();
++}
++
++void App::select_session() {
++  if (!sessions_open() || session_selecting_ || !can_talk()) return;
++  if (mode_ != Mode::Idle) { session_error_ = "Wait for reply"; return; }
++  if (!session_selected_) { start_new_session(); return; }
++  if (session_loading_) return;
++  const auto& row = sessions_[static_cast<size_t>(session_selected_)];
++  if (row.current) { dismiss_overlay(); return; }
++  session_request_ = next_id('s');
++  session_selecting_ = true;
++  session_error_.clear();
++  session_requested_at_ = now();
++  send(proto::message("session.select").set("id", session_request_).set("session", row.id));
++}
++
++void App::h_session_selected(const json::Value& m) {
++  if (!sessions_open() || !session_selecting_ || m["id"].str_or("") != session_request_) return;
++  session_selecting_ = false;
++  if (!m["ok"].as_bool()) { session_error_ = m["error"].str_or("Could not switch session"); return; }
++  dismiss_overlay();
++  reply_.clear(); user_echo_.clear(); status_.clear(); scroll_ = -1;
++  set_hint_flash("Session ready");
++}
++
+ void App::start_new_session() {
+   if (!can_talk()) {
+     set_hint_flash("Not connected to Hermes");
+@@ -1410,15 +1530,23 @@ void App::tick() {
+     notice_until_ = 0;
+     update_model();
+   }
++  if (sessions_open() && (session_loading_ || session_selecting_) && t - session_requested_at_ >= 10000) {
++    session_loading_ = session_selecting_ = false;
++    session_error_ = "No response; retry";
++    update_model();
++  }
+   if (cancel_held_ && !talk_held_ && !settings_open() && !cancel_long_fired_ && !prompt_showing()) {
+     uint32_t held = t - cancel_down_at_;
+     if (held >= kNewSessionHoldMs) {
+       cancel_long_fired_ = true;
+-      start_new_session();
++      if (cancel_physical_ && profile_.cancel_double_new_session) {
++        if (sessions_open()) dismiss_overlay();
++        else open_sessions();
++      } else start_new_session();
+       update_model();
+     } else if (held >= kNewSessionHintMs && can_talk()) {
+       uint32_t left = (kNewSessionHoldMs - held + 999) / 1000;
+-      std::string hint = "New session in " + std::to_string(left) + "s";
++      std::string hint = (cancel_physical_ && profile_.cancel_double_new_session ? "Sessions in " : "New session in ") + std::to_string(left) + "s";
+       if (hint != hint_flash_) {
+         set_hint_flash(std::move(hint));
+         update_model();
+@@ -1603,6 +1731,14 @@ void App::update_model() {
+     m.screen = Screen::Image;
+     m.headline = "Image";
+     m.hint = profile_.cancel_label + " to close";
++  } else if (overlay_ == Overlay::Sessions) {
++    m.screen = Screen::Sessions;
++    m.headline = "Sessions";
++    m.sessions = sessions_;
++    m.scroll = session_scroll_;
++    m.selected = session_selected_;
++    m.hint = session_loading_ ? "Loading..." : session_selecting_ ? "Switching..." :
++        !session_error_.empty() ? session_error_ : "KEY next; BOOT pick";
+   } else if (overlay_ == Overlay::Dashboard) {
+     m.screen = Screen::Dashboard;
+     m.headline = dash_headline_;
+@@ -1661,7 +1797,7 @@ void App::update_model() {
+   if (m.screen == Screen::Ready && m.hero && power_status_ && power_status_->battery_percent &&
+       *power_status_->battery_percent <= 10 && power_status_->external_power == false)
+     m.detail = "Low battery: connect USB";
+-  if (!hint_flash_.empty()) m.hint = hint_flash_;
++  if (!hint_flash_.empty() && !sessions_open()) m.hint = hint_flash_;
+   if (!display_sleeping_) render(m);
+ }
+ 
+@@ -1842,6 +1978,10 @@ std::string App::console(std::string_view raw) {
+     update_model();
+     return "@ok " + cmd;
+   }
++  if (cmd == "sessions") {
++    if (sessions_open()) { dismiss_overlay(); update_model(); return "@ok sessions closed"; }
++    return open_sessions() ? "@ok sessions" : "@error sessions unavailable";
++  }
+   if (cmd == "new-session") {
+     start_new_session();
+     update_model();
+diff --git a/firmware/core/src/app_power.cpp b/firmware/core/src/app_power.cpp
+index f73e668..8346092 100644
+--- a/firmware/core/src/app_power.cpp
++++ b/firmware/core/src/app_power.cpp
+@@ -72,7 +72,7 @@ void App::power_tick() {
+   if (hal_.display && hal_.display->info().has_backlight && (screen_timeout_ms_ || display_sleeping_)) {
+     // The settings menu can sleep too; the wake input leaves it on the same item.
+     const bool busy = mode_ != Mode::Idle || speaking() || talk_held_ || cancel_held_ || prompt_showing() ||
+-                      !wifi_setup_text_.empty() || phone_pairing_ || ota_busy() || ota_ == Ota::Restarting || overlay_ != Overlay::None;
++                      !wifi_setup_text_.empty() || phone_pairing_ || ota_busy() || ota_ == Ota::Restarting || (overlay_ != Overlay::None && overlay_ != Overlay::Sessions);
+     const bool settled = phase_ == Phase::NoNetwork || (phase_ == Phase::Online && paired_);
+     const bool idle = !busy && settled;
+     // Something for the user wakes the screen. A connection still settling keeps a
+diff --git a/firmware/core/src/touch.cpp b/firmware/core/src/touch.cpp
+index 7237e02..f30d2c7 100644
+--- a/firmware/core/src/touch.cpp
++++ b/firmware/core/src/touch.cpp
+@@ -25,6 +25,9 @@ void TouchGestures::update(bool touching, int x, int y, uint32_t now_ms) {
+         press(Button::Talk);
+         release(Button::Talk);
+         break;
++      case State::Sessions:
++        if (!session_moved_ && now_ms - t0_ < 800) app_.on_session_tap(x0_, y0_);
++        break;
+       case State::Talk: release(Button::Talk); break;
+       case State::Swipe: release(Button::Cancel); break;
+       default: break;
+@@ -35,7 +38,10 @@ void TouchGestures::update(bool touching, int x, int y, uint32_t now_ms) {
+ 
+   if (state_ == State::Idle) {
+     if (app_.wake_display()) { state_ = State::Ignored; return; }
+-    state_ = app_.settings_title_hit(x, y) ? State::Settings : State::Pending;
++    state_ = app_.sessions_open() ? State::Sessions :
++        app_.settings_title_hit(x, y) ? State::Settings : State::Pending;
++    session_y_ = y;
++    session_moved_ = false;
+     x0_ = x;
+     y0_ = y;
+     t0_ = now_ms;
+@@ -43,6 +49,14 @@ void TouchGestures::update(bool touching, int x, int y, uint32_t now_ms) {
+   }
+ 
+   const int dx = x - x0_, dy = y - y0_;
++  if (state_ == State::Sessions) {
++    if (std::abs(dx) > cfg_.slop_px || std::abs(dy) > cfg_.slop_px) session_moved_ = true;
++    if (std::abs(y - session_y_) >= cfg_.swipe_px) {
++      app_.on_session_scroll(y < session_y_ ? 1 : -1);
++      session_y_ = y;
++    }
++    return;
++  }
+   const bool swiped_down = (cfg_.swipe_cancel || app_.settings_open() || app_.wifi_setup_open() ||
+                            app_.phone_pairing_open()) &&
+                           dy >= cfg_.swipe_px && std::abs(dx) < dy;
+diff --git a/firmware/core/src/ui.cpp b/firmware/core/src/ui.cpp
+index 1153636..0cfe3d9 100644
+--- a/firmware/core/src/ui.cpp
++++ b/firmware/core/src/ui.cpp
+@@ -151,6 +151,7 @@ const char* screen_name(Screen s) {
+     case Screen::Settings: return "settings";
+     case Screen::Setup: return "setup";
+     case Screen::Dashboard: return "dashboard";
++    case Screen::Sessions: return "sessions";
+   }
+   return "unknown";
+ }
+@@ -269,6 +270,8 @@ void Ui::draw_frame(const UiModel& m) {
+   content.val(m.screen).add(m.detail).add(m.body).add(m.code).val(m.scroll).val(m.color_test)
+       .val(m.qr ? m.qr->size : 0);
+   for (const DashRow& row : m.dash) content.add(row.label).add(row.value).val(row.tone).val(row.heading);
++  content.val(m.selected);
++  for (const auto& row : m.sessions) content.add(row.id).add(row.title).add(row.detail).val(row.current);
+   hashes[2] = content.get();
+   hashes[3] = Hash().add(m.hint).get();
+ 
+@@ -493,6 +496,7 @@ void Ui::draw_indicator(Canvas& c, const UiModel& m, int cx, int cy, int r) {
+       c.text(cx - tw / 2, cy - (7 * s) / 2, "?", s, bg_);
+       break;
+     }
++    case Screen::Sessions:
+     case Screen::Dashboard: {
+       // A 2x2 grid of tiles.
+       const int g = std::max(1, r / 6), t = r - g / 2;
+@@ -554,6 +558,10 @@ void Ui::draw_content(Canvas& c, const UiModel& m) {
+   }
+ 
+   if (m.qr && m.qr->ok() && draw_qr(c, m, y0, y1)) return;
++  if (m.screen == Screen::Sessions) {
++    draw_sessions(c, m, y0, y1);
++    return;
++  }
+   if (m.screen == Screen::Dashboard) {
+     draw_dashboard(c, m, y0, y1);
+     return;
+@@ -604,6 +612,36 @@ void Ui::draw_content(Canvas& c, const UiModel& m) {
+   }
+ }
+ 
++int Ui::session_rows() const {
++  const int h = info_.height - layout_.top_h - layout_.header_h - layout_.bottom_h;
++  return std::max(1, (h - 4 * layout_.scale) / (24 * layout_.scale));
++}
++
++int Ui::session_hit(int x, int y) const {
++  const int s = layout_.scale;
++  const int top = oy_ + layout_.top_h + layout_.header_h + 2 * s;
++  if (x < ox_ + 4 * s || x >= ox_ + info_.width - 4 * s || y < top) return -1;
++  const int row = (y - top) / (24 * s);
++  return row < session_rows() ? row : -1;
++}
++
++void Ui::draw_sessions(Canvas& c, const UiModel& m, int y0, int) {
++  const int s = layout_.scale, pad = 4 * s, row_h = 24 * s;
++  const int w = info_.width - 2 * pad;
++  for (int i = 0; i < session_rows(); ++i) {
++    const int index = m.scroll + i;
++    if (index < 0 || index >= static_cast<int>(m.sessions.size())) break;
++    const auto& row = m.sessions[static_cast<size_t>(index)];
++    const int y = y0 + 2 * s + i * row_h;
++    const bool selected = index == m.selected;
++    c.fill_round_rect(pad, y, w, row_h - 2 * s, 2 * s, selected ? kBar : bg_);
++    if (selected) c.fill_rect(pad, y + 2 * s, s, row_h - 6 * s, kAccent);
++    const int x = pad + 3 * s, cols = cols_for(w - 6 * s, s);
++    c.text(x, y + 3 * s, fit(row.title, cols), s, selected ? kAccent : kText);
++    c.text(x, y + 13 * s, fit(row.detail, cols), s, row.current ? kGreen : kDim);
++  }
++}
++
+ int Ui::dash_rows() const {
+   const int s = layout_.scale;
+   const int content_h = info_.height - layout_.top_h - layout_.header_h - layout_.bottom_h;
+@@ -842,7 +880,8 @@ void Ui::draw_bottom(Canvas& c, const UiModel& m) {
+   const int s = layout_.scale;
+   const int y0 = info_.height - layout_.bottom_h;
+   c.fill_rect(0, y0, info_.width, layout_.bottom_h, panel_.round ? bg_ : kBar);
+-  std::string hint = fit(m.hint, cols_for(info_.width - 4 * s, s));
++  const int pad = 2 * s + (panel_.round ? 0 : panel_.corner_inset);
++  std::string hint = fit(m.hint, cols_for(std::max(0, info_.width - 2 * pad), s));
+   c.text((info_.width - Canvas::text_width(hint, s)) / 2, y0 + s, hint, s, kDim);
+ }
+ 
+diff --git a/firmware/esp32/main/board.cpp b/firmware/esp32/main/board.cpp
+index 469ebd6..226e20d 100644
+--- a/firmware/esp32/main/board.cpp
++++ b/firmware/esp32/main/board.cpp
+@@ -240,7 +240,7 @@ BoardConfig make() {
+   b.name = kBoardName;
+   b.amoled.enabled = true;
+   b.amoled.width = 480;
+-  b.amoled.height = 480;    // square glass, no round corners
++  b.amoled.height = 480;    // full framebuffer; the visible opening has rounded corners
+   b.amoled.cs = 12;
+   b.amoled.sclk = 38;
+   b.amoled.d0 = 4;
+@@ -251,6 +251,9 @@ BoardConfig make() {
+   b.amoled.gap_x = 0;       // the controller RAM is exactly 480 wide
+   b.amoled.gap_y = 0;
+   b.amoled.panel = AmoledPanel::Co5300_480;
++  // Keep the title, status and footer inside the rounded visible opening.
++  // The centre of the screen still uses the full 480-pixel width.
++  b.amoled.corner_inset = 48;
+   b.i2c = {15, 14, 400000};
+   b.codec.enabled = true;
+   b.codec.mclk = 42;
+@@ -273,9 +276,10 @@ BoardConfig make() {
+   b.touch.swap_xy = true;
+   b.axp2101 = true;
+   b.axp_power_key = true;
+-  b.buttons = {0, -1, -1, -1};  // BOOT is TALK
++  b.buttons = {0, 18, -1, -1};  // BOOT talks; +/KEY (KEY3) cancels
++  b.cancel_double_new_session = true;
+   b.talk_label = "BOOT";
+-  b.cancel_label = "Swipe down";
++  b.cancel_label = "+/KEY";
+   return b;
+ }
+ #elif CONFIG_HG_BOARD_WS_ESP32S3_TOUCH_LCD_185C_V2
+diff --git a/firmware/esp32/main/board.hpp b/firmware/esp32/main/board.hpp
+index 024f144..9c343f9 100644
+--- a/firmware/esp32/main/board.hpp
++++ b/firmware/esp32/main/board.hpp
+@@ -251,6 +251,7 @@ struct BoardConfig {
+   int status_led = -1;
+   const char* talk_label = "TALK";
+   const char* cancel_label = "CANCEL";
++  bool cancel_double_new_session = false;
+ };
+ 
+ // GPIO held high to power the panel's peripheral rail. Boards without one
+diff --git a/firmware/esp32/main/main.cpp b/firmware/esp32/main/main.cpp
+index d53da32..5795bd9 100644
+--- a/firmware/esp32/main/main.cpp
++++ b/firmware/esp32/main/main.cpp
+@@ -315,6 +315,7 @@ extern "C" void app_main(void) {
+   profile.has_scroll_buttons = (board.buttons.up >= 0 && board.buttons.down >= 0) || board.encoder.a >= 0;
+   profile.talk_label = board.talk_label;
+   profile.cancel_label = board.cancel_label;
++  profile.cancel_double_new_session = board.cancel_double_new_session;
+   if (touch && board.touch.enabled) {
+     profile.touch_screen = true;
+     profile.extra_settings = {"touch_cancel"};
+diff --git a/firmware/esp32/main/port_buttons.cpp b/firmware/esp32/main/port_buttons.cpp
+index bcbea6a..983cb40 100644
+--- a/firmware/esp32/main/port_buttons.cpp
++++ b/firmware/esp32/main/port_buttons.cpp
+@@ -34,7 +34,8 @@ void Buttons::poll(hg::App& app) {
+     if (++b.stable >= kDebounceTicks) {
+       b.pressed = down;
+       b.stable = 0;
+-      app.on_button(b.id, down);
++      if (b.id == hg::Button::Cancel) app.on_cancel_button(down);
++      else app.on_button(b.id, down);
+     }
+   }
+ }
+diff --git a/firmware/esp32/platformio.ini b/firmware/esp32/platformio.ini
+index 556ecf0..7e7dead 100644
+--- a/firmware/esp32/platformio.ini
++++ b/firmware/esp32/platformio.ini
+@@ -80,6 +80,7 @@ board_build.flash_size = 16MB
+ board_upload.flash_size = 16MB
+ board_build.cmake_extra_args =
+     -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;boards/esp32s3-touch-amoled-216/sdkconfig.defaults"
++    -DPROJECT_VER=0.2.0-sessions.1
+ 
+ [env:esp32-s3-box-3]
+ board = esp32-s3-devkitc-1
+diff --git a/firmware/tests/test_app.cpp b/firmware/tests/test_app.cpp
+index 0323d80..d4e81cb 100644
+--- a/firmware/tests/test_app.cpp
++++ b/firmware/tests/test_app.cpp
+@@ -74,6 +74,7 @@ struct FakeHal : hg::Display, hg::AudioIn, hg::AudioOut, hg::Transport, hg::Stor
+   // Display
+   int width = 320, height = 240;
+   bool round = false;
++  uint8_t corner_inset = 0;
+   bool emissive = false;
+   bool backlight = false;
+   int brightness = 0, volume = 0;
+@@ -85,6 +86,7 @@ struct FakeHal : hg::Display, hg::AudioIn, hg::AudioOut, hg::Transport, hg::Stor
+     d.width = static_cast<uint16_t>(width);
+     d.height = static_cast<uint16_t>(height);
+     d.round = round;
++    d.corner_inset = corner_inset;
+     d.emissive = emissive;
+     d.has_backlight = backlight;
+     return d;
+@@ -846,6 +848,109 @@ TEST("app: holding CANCEL starts a new session; a short press still cancels") {
+   CHECK(r.fake.last("cancel") == nullptr);  // the release does not also cancel
+ }
+ 
++static void click_physical_cancel(Rig& r) {
++  r.app.on_cancel_button(true);
++  r.advance(60);
++  r.app.on_cancel_button(false);
++}
++
++TEST("app: physical CANCEL double-click starts one session and single-click still cancels") {
++  auto profile = Rig::touch_profile();
++  profile.cancel_double_new_session = true;
++  Rig r(profile);
++  r.bring_online(true);
++  r.server(R"({"type":"turn.start","turn":"t1"})");
++  click_physical_cancel(r);
++  CHECK(r.fake.last("cancel") != nullptr);
++  CHECK(r.fake.last("session.new") == nullptr);
++  r.advance(150);
++  click_physical_cancel(r);
++  CHECK(r.fake.last("session.new") != nullptr);
++  CHECK_EQ(r.app.model().hint, std::string("New session"));
++  int sessions = 0;
++  for (const auto& sent : r.fake.sent) sessions += sent["type"].as_string() == "session.new";
++  CHECK_EQ(sessions, 1);
++}
++
++TEST("app: double-click is opt-in and does not reinterpret touch CANCEL events") {
++  Rig normal;
++  normal.bring_online(true);
++  click_physical_cancel(normal);
++  normal.advance(100);
++  click_physical_cancel(normal);
++  CHECK(normal.fake.last("session.new") == nullptr);
++
++  auto profile = Rig::touch_profile();
++  profile.cancel_double_new_session = true;
++  Rig touch(profile);
++  touch.bring_online(true);
++  for (int i = 0; i < 2; ++i) {
++    touch.app.on_button(hg::Button::Cancel, true);
++    touch.advance(60);
++    touch.app.on_button(hg::Button::Cancel, false);
++    touch.advance(100);
++  }
++  CHECK(touch.fake.last("session.new") == nullptr);
++}
++
++TEST("app: slow physical clicks and intervening TALK do not start a new session") {
++  auto profile = Rig::touch_profile();
++  profile.cancel_double_new_session = true;
++  Rig r(profile);
++  r.bring_online(true);
++  click_physical_cancel(r);
++  r.advance(600);
++  click_physical_cancel(r);
++  CHECK(r.fake.last("session.new") == nullptr);
++  r.app.on_button(hg::Button::Talk, true);
++  r.advance(60);
++  r.app.on_button(hg::Button::Talk, false);
++  click_physical_cancel(r);
++  CHECK(r.fake.last("session.new") == nullptr);
++}
++
++TEST("app: physical double-click does not start sessions in settings or after a declined prompt") {
++  auto profile = Rig::touch_profile();
++  profile.cancel_double_new_session = true;
++  Rig r(profile);
++  r.bring_online(true);
++  r.app.open_settings();
++  click_physical_cancel(r);
++  r.advance(100);
++  click_physical_cancel(r);
++  CHECK(r.app.settings_open());
++  CHECK(r.fake.last("session.new") == nullptr);
++  r.app.close_settings();
++  r.server(R"({"type":"prompt","id":"q2","title":"Allow?","text":"An approval"})");
++  r.advance(700);
++  click_physical_cancel(r);
++  const Value* reply = r.fake.last("prompt.reply");
++  CHECK(reply && (*reply)["answer"].as_string() == "no");
++  r.advance(100);
++  click_physical_cancel(r);
++  CHECK(r.fake.last("session.new") == nullptr);
++}
++
++TEST("app: physical KEY hold opens history and its release does not arm a double-click") {
++  auto profile = Rig::touch_profile();
++  profile.cancel_double_new_session = true;
++  Rig r(profile);
++  r.bring_online(true);
++  r.app.on_cancel_button(true);
++  r.advance(2200);
++  r.app.on_cancel_button(false);
++  CHECK(r.app.sessions_open());
++  CHECK(r.fake.last("session.list") != nullptr);
++  click_physical_cancel(r);
++  CHECK(r.app.sessions_open());
++  CHECK(r.fake.last("session.new") == nullptr);
++  r.app.on_cancel_button(true);
++  r.advance(2200);
++  r.app.on_cancel_button(false);
++  CHECK(!r.app.sessions_open());
++  CHECK(r.fake.last("session.new") == nullptr);
++}
++
+ TEST("app: a new session discards a recording in progress") {
+   Rig r;
+   r.bring_online(true);
+@@ -1014,6 +1119,36 @@ TEST("app: long replies page themselves; UP/DOWN pauses the paging") {
+   CHECK(r.app.model().hero);
+ }
+ 
++TEST("display: rounded 480x480 panel keeps header and footer text clear of its corners") {
++  FakeHal display;
++  display.width = display.height = 480;
++  display.corner_inset = 48;
++  display.emissive = true;
++  display.fb.assign(480 * 480, 0);
++  hg::Ui ui(display);
++  hg::UiModel m;
++  m.screen = hg::Screen::Ready;
++  m.link = hg::Link::Online;
++  m.title = "Hermes Gadget with a very long name";
++  m.hint = "Hold the screen to talk / swipe down to cancel";
++  m.hero = true;
++  ui.render(m);
++  CHECK_EQ(ui.area().width, 480);
++  CHECK_EQ(ui.area().height, 480);
++  const uint16_t bar = hg::rgb565(24, 31, 42);
++  int stray = 0, foreground = 0;
++  for (int y = 0; y < 480; ++y) {
++    if (y >= ui.layout().top_h && y < 480 - ui.layout().bottom_h) continue;
++    for (int x = 0; x < 480; ++x) {
++      const bool painted = display.fb[y * 480 + x] != bar;
++      if (x < 48 || x >= 432) stray += painted;
++      else foreground += painted;
++    }
++  }
++  CHECK_EQ(stray, 0);
++  CHECK(foreground > 100);  // labels are visible, not simply hidden
++}
++
+ TEST("app: on a round panel everything stays inside the circle") {
+   Rig r;
+   r.fake.make_round(466);
+@@ -2825,3 +2960,132 @@ TEST("dashboard: touch boards open it with a swipe down") {
+   CHECK(r.app.screen() == hg::Screen::Dashboard);
+   CHECK_EQ(r.app.model().hint, std::string("Swipe down to close"));
+ }
++
++
++static void history(Rig& r) {
++  CHECK(r.app.open_sessions());
++  const std::string id = (*r.fake.last("session.list"))["id"].as_string();
++  r.server("{\"type\":\"session.list\",\"id\":\"" + id + R"(","sessions":[
++    {"id":"saved1","title":"Home automation","detail":"20 Oct 18:30","current":true},
++    {"id":"saved2","title":"Weekend plans","detail":"19 Oct 10:15","current":false}]})");
++}
++
++TEST("sessions: opening and browsing preserves the current conversation") {
++  Rig r;
++  r.bring_online(true);
++  r.server(R"({"type":"reply","text":"Keep this answer"})");
++  r.server(R"({"type":"turn.end","outcome":"success"})");
++  r.advance(100);
++  history(r);
++  CHECK_EQ(r.app.screen(), hg::Screen::Sessions);
++  CHECK_EQ(r.app.model().sessions.size(), size_t(3));
++  CHECK(r.app.model().sessions[1].current);
++  CHECK(r.fake.last("session.new") == nullptr);
++  CHECK(r.fake.last("cancel") == nullptr);
++  r.app.on_session_scroll(1);
++  r.app.on_button(hg::Button::Talk, true);
++  r.app.on_button(hg::Button::Talk, false);
++  CHECK(!r.app.sessions_open());
++  CHECK(r.fake.last("session.select") == nullptr);
++  CHECK(!r.fake.mic_on);
++  CHECK_EQ(r.app.model().body, std::string("Keep this answer"));
++}
++
++TEST("sessions: selection waits for matching host acknowledgement") {
++  Rig r;
++  r.bring_online(true);
++  history(r);
++  r.app.on_session_scroll(2);
++  r.app.on_button(hg::Button::Talk, true);
++  r.app.on_button(hg::Button::Talk, false);
++  const auto* request = r.fake.last("session.select");
++  CHECK(request != nullptr);
++  CHECK_EQ((*request)["session"].as_string(), std::string("saved2"));
++  const std::string id = (*request)["id"].as_string();
++  r.server(R"({"type":"session.selected","id":"old","ok":true})");
++  CHECK(r.app.sessions_open());
++  r.server("{\"type\":\"session.selected\",\"id\":\"" + id + "\",\"ok\":true}");
++  CHECK(!r.app.sessions_open());
++  CHECK_EQ(r.app.model().hint, std::string("Session ready"));
++}
++
++TEST("sessions: stale lists and failed switches do not replace the active conversation") {
++  Rig r;
++  r.bring_online(true);
++  history(r);
++  r.server(R"({"type":"session.list","id":"old","sessions":[]})");
++  CHECK_EQ(r.app.model().sessions.size(), size_t(3));
++  r.app.on_session_scroll(2);
++  r.app.on_button(hg::Button::Talk, true);
++  r.app.on_button(hg::Button::Talk, false);
++  const std::string id = (*r.fake.last("session.select"))["id"].as_string();
++  r.server("{\"type\":\"session.selected\",\"id\":\"" + id + "\",\"ok\":false,\"error\":\"Busy\"}");
++  CHECK(r.app.sessions_open());
++  CHECK_EQ(r.app.model().hint, std::string("Busy"));
++}
++
++TEST("sessions: offline and approvals cannot open history, loading times out visibly") {
++  Rig r;
++  r.app.begin();
++  CHECK(!r.app.open_sessions());
++  r.bring_online(true);
++  r.server(R"({"type":"prompt","id":"q","text":"Approve?"})");
++  CHECK(!r.app.open_sessions());
++  r.server(R"({"type":"prompt.close","id":"q"})");
++  CHECK(r.app.open_sessions());
++  r.advance(10100);
++  CHECK(r.app.model().hint.find("No response") != std::string::npos);
++}
++
++TEST("sessions: touchscreen swipes scroll without recording or selecting") {
++  Rig r(Rig::touch_profile());
++  r.bring_online(true);
++  history(r);
++  hg::TouchGestures touch(r.app);
++  touch.update(true, 150, 170, r.fake.clock);
++  r.advance(300);
++  touch.tick(r.fake.clock);
++  CHECK(!r.fake.mic_on);
++  touch.update(true, 150, 90, r.fake.clock);
++  touch.update(false, 0, 0, r.fake.clock);
++  CHECK_EQ(r.app.model().selected, 1);
++  CHECK(r.fake.last("session.select") == nullptr);
++  hg::Ui geometry(r.fake);
++  const auto& layout = geometry.layout();
++  const int row2 = layout.top_h + layout.header_h + 2 * layout.scale + 48 * layout.scale + 5;
++  touch.update(true, 150, row2, r.fake.clock);
++  touch.update(false, 0, 0, r.fake.clock + 40);
++  CHECK(r.fake.last("session.select") != nullptr);
++  CHECK(!r.fake.mic_on);
++}
++
++TEST("sessions: physical first wake is consumed and does not create a double-click") {
++  auto p = Rig::touch_profile();
++  p.cancel_double_new_session = true;
++  Rig r(p);
++  r.bring_online(true);
++  r.fake.backlight = true;
++  r.app.on_power_key();
++  CHECK(r.app.status_json().find("\"display_sleeping\":true") != std::string::npos);
++  click_physical_cancel(r);
++  r.advance(100);
++  click_physical_cancel(r);
++  CHECK(r.fake.last("session.new") == nullptr);
++  CHECK(!r.app.sessions_open());
++}
++
++TEST("sessions: PWR can keep the idle browser dark and the wake click only wakes") {
++  auto p = Rig::touch_profile();
++  p.cancel_double_new_session = true;
++  Rig r(p);
++  r.fake.backlight = true;
++  r.bring_online(true);
++  history(r);
++  r.app.on_power_key();
++  r.advance(1000);
++  CHECK(r.app.status_json().find("\"display_sleeping\":true") != std::string::npos);
++  click_physical_cancel(r);
++  CHECK_EQ(r.app.model().selected, 0);
++  CHECK(r.app.sessions_open());
++  CHECK(r.fake.last("session.new") == nullptr);
++}
+diff --git a/plugin/adapter.py b/plugin/adapter.py
+index 24afce9..aec4f6c 100644
+--- a/plugin/adapter.py
++++ b/plugin/adapter.py
+@@ -58,6 +58,7 @@ from . import dashboard, imaging, ota, runtime, textfmt
+ from .battery_log import BatteryLog
+ from .hub import DeviceHub, DeviceSession, HubDelegate
+ from .store import DeviceStore
++from .session_browser import BrowserRequests, snapshot
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -198,6 +199,8 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
+         self._store: Optional[DeviceStore] = None
+         self._loop: Optional[asyncio.AbstractEventLoop] = None
+         self._turns: Dict[str, str] = {}
++        self._browser = BrowserRequests()
++        self._browser_busy: set[str] = set()
+         self._watch_task: Optional[asyncio.Task] = None
+         self._update_task: Optional[asyncio.Task] = None
+         self._installing: Dict[str, asyncio.Task] = {}  # device id -> staged update being installed
+@@ -218,6 +221,7 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
+         from plugins.plugin_storage import plugin_data_dir
+ 
+         self._store = DeviceStore(plugin_data_dir(PLATFORM_NAME))
++        self._session_home = plugin_data_dir(PLATFORM_NAME).parent.parent
+         if self._battery_log_on:
+             self._battery_log = BatteryLog(plugin_data_dir(PLATFORM_NAME) / "battery")
+         try:
+@@ -481,6 +485,54 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
+         self._new_requested[session.device_id] = time.monotonic()
+         await self.handle_message(self._event(session, "new", "/new", message_type=MessageType.TEXT))
+ 
++    async def on_session_list(self, session: DeviceSession, request_id: str) -> None:
++        if not session.paired or self._authorized(session.device_id) is False:
++            return
++        if session.device_id in self._browser_busy:
++            return
++        self._browser_busy.add(session.device_id)
++        try:
++            result = await asyncio.to_thread(snapshot, self._session_home, session.device_id, session.charset)
++            self._browser.remember(session.device_id, result["sessions"])
++        except Exception:
++            logger.exception("[%s] session history unavailable", session.device_id)
++            result = {"sessions": [], "error": "History unavailable - check Hermes on Mac"}
++        finally:
++            self._browser_busy.discard(session.device_id)
++        await session.send_json({"type": "session.list", "id": request_id, **result})
++
++    async def on_session_select(self, session: DeviceSession, request_id: str, target: str) -> None:
++        if not session.paired or self._authorized(session.device_id) is False:
++            return
++        if (not self._browser.permits(session.device_id, target)
++                or session.device_id in self._turns or session.device_id in self._browser_busy
++                or self._prompts.get(session.device_id)):
++            await session.send_json({"type": "session.selected", "id": request_id, "ok": False,
++                                     "error": "Busy or list expired - reopen Sessions"})
++            return
++        self._browser_busy.add(session.device_id)
++        try:
++            await session.stop_audio()
++            # Normal gateway dispatch owns authorization, busy-turn guards, restoring
++            # history and evicting the previous agent. Never repoint its DB directly.
++            event = self._event(session, "resume-" + request_id,
++                "/resume " + target, message_type=MessageType.TEXT)
++            await self.handle_message(event)
++            task = self._session_tasks.get(self._event_session_key(event))
++            if not event._gateway_accepted or task is None:
++                raise RuntimeError("Gateway did not accept session switch")
++            await asyncio.wait_for(asyncio.shield(task), timeout=7)
++            result = await asyncio.to_thread(snapshot, self._session_home, session.device_id, session.charset)
++            ok = any(row["id"] == target and row["current"] for row in result["sessions"])
++            await session.send_json({"type": "session.selected", "id": request_id, "ok": ok,
++                                     "error": "" if ok else "Could not resume - check Hermes on Mac"})
++        except Exception:
++            logger.exception("[%s] session switch failed", session.device_id)
++            await session.send_json({"type": "session.selected", "id": request_id, "ok": False,
++                                     "error": "Could not switch - reopen Sessions"})
++        finally:
++            self._browser_busy.discard(session.device_id)
++
+     async def on_event(self, session: DeviceSession, name: str, data: Any, notify: bool) -> None:
+         logger.info("[%s] event from %s: %s %s", self.name, session.device_id, name, data)
+         if not notify:
+diff --git a/plugin/hub.py b/plugin/hub.py
+index 7e8511f..5621b1b 100644
+--- a/plugin/hub.py
++++ b/plugin/hub.py
+@@ -56,6 +56,13 @@ class HubDelegate:
+     async def on_new_session(self, session: "DeviceSession") -> None:
+         pass
+ 
++    async def on_session_list(self, session: "DeviceSession", request_id: str) -> None:
++        await session.send_json({"type": "session.list", "id": request_id, "sessions": [],
++                                 "error": "Session browser needs the Hermes plugin"})
++
++    async def on_session_select(self, session: "DeviceSession", request_id: str, target: str) -> None:
++        pass
++
+     async def on_prompt_reply(self, session: "DeviceSession", prompt_id: str, yes: bool) -> None:
+         pass
+ 
+@@ -818,6 +825,15 @@ class DeviceHub:
+         await session.stop_audio()
+         session.spawn(self.delegate.on_new_session(session))
+ 
++    async def _h_session_list(self, session: DeviceSession, msg: dict) -> None:
++        if session.paired:
++            session.spawn(self.delegate.on_session_list(session, str(msg.get("id") or "")[:64]))
++
++    async def _h_session_select(self, session: DeviceSession, msg: dict) -> None:
++        if session.paired:
++            session.spawn(self.delegate.on_session_select(session, str(msg.get("id") or "")[:64],
++                                                         str(msg.get("session") or "")[:128]))
++
+     async def _h_prompt_reply(self, session: DeviceSession, msg: dict) -> None:
+         prompt_id = str(msg.get("id") or "")[:64]
+         answer = msg.get("answer")
+@@ -869,6 +885,8 @@ class DeviceHub:
+         "audio.cancel": _h_audio_cancel,
+         "cancel": _h_cancel,
+         "session.new": _h_session_new,
++        "session.list": _h_session_list,
++        "session.select": _h_session_select,
+         "prompt.reply": _h_prompt_reply,
+         "action.result": _h_action_result,
+         "state": _h_state,
+diff --git a/tests/test_adapter_hermes.py b/tests/test_adapter_hermes.py
+index 0cb5265..99ecd33 100644
+--- a/tests/test_adapter_hermes.py
++++ b/tests/test_adapter_hermes.py
+@@ -801,3 +801,49 @@ def test_a_dark_screen_gets_only_the_latest_dashboard_when_it_wakes(gadget, make
+     woke = _dashboards(sim, before)
+     assert len(woke) == 1
+     assert {r["label"]: r["state"] for r in woke[0]["sessions"]} == {"cli 2222": "busy", "cli 1111": "idle"}
++
++
++def test_session_browser_roundtrip_waits_for_gateway_and_confirms_current(gadget, make_sim, monkeypatch):
++    import json
++    from hermes_state import SessionDB
++    sim = _paired_sim(gadget, make_sim)
++    device_id = sim.status()["device_id"]
++    home = gadget.adapter._session_home
++    home.mkdir(parents=True, exist_ok=True)
++    db = SessionDB(home / "state.db")
++    key = "agent:main:gadget:dm:" + device_id
++    for sid in ("browser-old", "browser-current"):
++        db.create_session(sid, "gadget", session_key=key, user_id=device_id, chat_id=device_id)
++        db.set_session_title(sid, sid)
++    scope = str((home / "sessions").resolve())
++    entry = {"session_id": "browser-current", "origin": {
++        "platform": "gadget", "user_id": device_id, "chat_id": device_id, "chat_type": "dm"}}
++    db.save_gateway_routing_entry(key, json.dumps(entry), scope=scope)
++
++    def resume(event):
++        assert event.text == "/resume browser-old"
++        entry["session_id"] = "browser-old"
++        db.save_gateway_routing_entry(key, json.dumps(entry), scope=scope)
++        return "Resumed browser-old"
++    gadget.reply = resume
++    try:
++        assert sim.console("sessions").startswith("@ok")
++        assert sim.wait_screen("sessions", timeout=5)
++        assert sim.wait_for(lambda: (sim.last_received("session.list") or {}).get("sessions"), timeout=5)
++        # Move past New conversation; row ordering is by activity, so pick by wire ID.
++        rows = sim.last_received("session.list")["sessions"]
++        index = next(i for i, row in enumerate(rows) if row["id"] == "browser-old") + 1
++        for _ in range(index):
++            sim.tap("cancel")
++        sim.tap("talk")
++        assert sim.wait_for(lambda: sim.last_received("session.selected") is not None, timeout=10)
++        assert sim.last_received("session.selected")["ok"] is True
++        assert entry["session_id"] == "browser-old"
++        assert sim.wait_screen("ready", timeout=5)
++        # Selection handles never become arbitrary slash commands.
++        session = gadget.adapter.hub.get(device_id)
++        gadget.run(gadget.adapter.on_session_select(session, "invalid", "browser-old --all"))
++        assert sim.wait_for(lambda: (sim.last_received("session.selected") or {}).get("id") == "invalid")
++        assert sim.last_received("session.selected")["ok"] is False
++    finally:
++        db.close()
+diff --git a/plugin/session_browser.py b/plugin/session_browser.py
+new file mode 100644
+index 0000000..0aff18e
+--- /dev/null
++++ b/plugin/session_browser.py
+@@ -0,0 +1,85 @@
++"""Read-only, device-scoped history; resuming still goes through Hermes /resume.
++
++The profile home is captured when the adapter connects. Never open an unscoped
++process-global DB after a different profile has handled a message.
++"""
++from __future__ import annotations
++
++import json
++import re
++import time
++from datetime import datetime, timezone
++from pathlib import Path
++
++from . import textfmt
++
++SESSION_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z")
++
++
++def _owned(row: dict, device_id: str, *, route: bool = False) -> bool:
++    return (row.get("platform" if route else "source") == "gadget"
++            and row.get("user_id") == device_id and row.get("chat_id") == device_id
++            and not row.get("thread_id"))
++
++
++def _when(value) -> str:
++    try:
++        stamp = float(value)
++        return datetime.fromtimestamp(stamp, timezone.utc).astimezone().strftime("%d %b %H:%M")
++    except (ValueError, TypeError, OSError, OverflowError):
++        return "Saved conversation"
++
++
++def snapshot(home: Path, device_id: str, charset: str = "ascii") -> dict:
++    """Return at most 20 sessions belonging to this device's current routing key.
++
++    No full transcripts, API keys, or other devices' titles cross the wire.
++    Current-route identity and row ownership are both required (legacy rows fail
++    closed). SessionDB projects compression continuations to the live tip.
++    """
++    from hermes_state import SessionDB
++
++    db = SessionDB(home / "state.db", read_only=True)
++    try:
++        entries = db.load_gateway_routing_entries(scope=str((home / "sessions").resolve()))
++        route = None
++        for key, value in entries.items():
++            entry = json.loads(value)
++            if _owned(entry.get("origin") or {}, device_id, route=True):
++                if route is not None:
++                    raise RuntimeError("Multiple device routes; use Hermes on the Mac")
++                route = dict(entry, session_key=key)
++        if route is None:
++            return {"sessions": []}
++        current = db.resolve_resume_session_id(route["session_id"])
++        rows = db.list_sessions_rich(source="gadget", session_key=route["session_key"],
++                                     limit=40, order_by_last_active=True)
++        result = []
++        seen = set()
++        for row in rows:
++            sid = str(row.get("id") or "")
++            if not SESSION_ID.fullmatch(sid) or not _owned(row, device_id) or sid in seen:
++                continue
++            seen.add(sid)
++            title = row.get("title") or row.get("preview") or "Untitled conversation"
++            result.append({"id": sid, "title": textfmt.for_device(str(title), charset)[:160],
++                           "detail": _when(row.get("last_active") or row.get("started_at")),
++                           "current": sid == current})
++            if len(result) == 20:
++                break
++        return {"sessions": result}
++    finally:
++        db.close()
++
++
++class BrowserRequests:
++    """Only a recently listed, exact session ID can become a /resume argument."""
++    def __init__(self):
++        self.allowed: dict[str, tuple[float, set[str]]] = {}
++
++    def remember(self, device_id: str, rows: list[dict]) -> None:
++        self.allowed[device_id] = (time.monotonic(), {r["id"] for r in rows})
++
++    def permits(self, device_id: str, session_id: str) -> bool:
++        at, ids = self.allowed.get(device_id, (0, set()))
++        return bool(SESSION_ID.fullmatch(session_id) and session_id in ids and time.monotonic() - at < 600)
+diff --git a/tests/test_session_browser.py b/tests/test_session_browser.py
+new file mode 100644
+index 0000000..3b6a147
+--- /dev/null
++++ b/tests/test_session_browser.py
+@@ -0,0 +1,121 @@
++"""Saved-history scoping and switching against Hermes's real SQLite schema."""
++import json
++from pathlib import Path
++
++import pytest
++
++from conftest import requires_hermes
++from hermes_gadget_plugin.session_browser import BrowserRequests, snapshot
++
++pytestmark = requires_hermes
++DEVICE = "hg-0123456789abcdef"
++KEY = "agent:main:gadget:dm:" + DEVICE
++
++
++@pytest.fixture
++def saved(tmp_path):
++    from hermes_state import SessionDB
++    home = tmp_path / "hermes-home"
++    home.mkdir()
++    db = SessionDB(home / "state.db")
++    for sid, title in [("saved-one", "Home automation"), ("saved-two", "Weekend plans")]:
++        db.create_session(sid, "gadget", session_key=KEY, user_id=DEVICE, chat_id=DEVICE, chat_type="dm")
++        db.set_session_title(sid, title)
++        db.append_message(sid, "user", "Private transcript text")
++    origin = {"platform": "gadget", "user_id": DEVICE, "chat_id": DEVICE, "chat_type": "dm"}
++    entry = {"session_id": "saved-two", "origin": origin}
++    db.save_gateway_routing_entry(KEY, json.dumps(entry), scope=str((home / "sessions").resolve()))
++    yield home, db, entry
++    db.close()
++
++
++def test_history_includes_unnamed_and_current_but_never_other_devices(saved):
++    home, db, _ = saved
++    db.create_session("foreign", "gadget", session_key=KEY, user_id="other", chat_id="other")
++    db.set_session_title("foreign", "Foreign private title")
++    db.create_session("legacy", "gadget", session_key=KEY)
++    db.set_session_title("legacy", "Unproven owner")
++    db.create_session("unnamed", "gadget", session_key=KEY, user_id=DEVICE, chat_id=DEVICE)
++    result = snapshot(home, DEVICE)
++    assert {s["id"] for s in result["sessions"]} == {"saved-one", "saved-two", "unnamed"}
++    assert next(s for s in result["sessions"] if s["id"] == "saved-two")["current"]
++    assert not next(s for s in result["sessions"] if s["id"] == "saved-one")["current"]
++    assert "Private transcript text" not in json.dumps(result)
++    assert snapshot(home, "other-device") == {"sessions": []}
++
++
++def test_history_rechecks_current_after_switch_and_uses_profile_scope(saved):
++    home, db, entry = saved
++    entry["session_id"] = "saved-one"
++    db.save_gateway_routing_entry(KEY, json.dumps(entry), scope=str((home / "sessions").resolve()))
++    assert next(s for s in snapshot(home, DEVICE)["sessions"] if s["current"])["id"] == "saved-one"
++    db.replace_gateway_routing_entries({}, scope=str((home / "sessions").resolve()))
++    db.save_gateway_routing_entry(KEY, json.dumps(entry), scope="/another-profile/sessions")
++    assert snapshot(home, DEVICE) == {"sessions": []}
++
++
++def test_resume_requires_an_exact_recently_listed_id(monkeypatch):
++    from hermes_gadget_plugin import session_browser as module
++    requests = BrowserRequests()
++    requests.remember(DEVICE, [{"id": "saved-one"}])
++    assert requests.permits(DEVICE, "saved-one")
++    assert not requests.permits("other", "saved-one")
++    assert not requests.permits(DEVICE, "saved-two")
++    assert not requests.permits(DEVICE, "saved-one --all")
++    assert not requests.permits(DEVICE, "saved-one\n/new")
++    at = module.time.monotonic()
++    monkeypatch.setattr(module.time, "monotonic", lambda: at + 601)
++    assert not requests.permits(DEVICE, "saved-one")
++
++
++def test_real_hermes_resume_restores_transcript_and_checks_owner(tmp_path, loop_thread):
++    """Exercise the installed Hermes /resume implementation with a real SessionStore."""
++    import types
++    from gateway.config import GatewayConfig, Platform
++    from gateway.session import SessionSource, SessionStore, AsyncSessionStore
++    from gateway.platforms.event import MessageEvent, MessageType
++    from gateway.slash_commands_session import GatewaySessionCommandsMixin
++    from hermes_state import SessionDB, AsyncSessionDB
++
++    home = tmp_path / "resume-home"
++    home.mkdir()
++    db = SessionDB(home / "state.db")
++    config = GatewayConfig(sessions_dir=home / "sessions")
++    store = SessionStore(config.sessions_dir, config)
++    store._db = db
++    from gateway.platform_registry import PlatformEntry, platform_registry
++    platform_registry.register(PlatformEntry(name="gadget", label="Hermes Gadget",
++        adapter_factory=lambda config: None, check_fn=lambda: True, source="builtin"))
++    source = SessionSource(platform=Platform("gadget"), chat_id=DEVICE, user_id=DEVICE, chat_type="dm")
++    old = store.get_or_create_session(source)
++    db.set_session_title(old.session_id, "Previous conversation")
++    store.append_to_transcript(old.session_id, {"role": "user", "content": "Remember my blue bike"})
++    fresh = store.reset_session(old.session_key)
++    assert fresh.session_id != old.session_id
++
++    class Runner(GatewaySessionCommandsMixin):
++        _normalize_source_for_session_key = staticmethod(lambda source: source)
++        _resume_caller_is_admin = staticmethod(lambda source: False)
++        _release_running_agent_state = staticmethod(lambda key: None)
++        _clear_conversation_scope = staticmethod(lambda *a, **kw: None)
++        _evict_cached_agent = staticmethod(lambda key: None)
++        _gateway_session_origin_for_id = staticmethod(lambda sid: (store.lookup_by_session_id(sid).origin
++            if store.lookup_by_session_id(sid) else None))
++        _session_key_for_source = staticmethod(store._generate_session_key)
++
++    runner = Runner()
++    runner.config = config
++    runner._session_db = AsyncSessionDB(db)
++    runner.async_session_store = AsyncSessionStore(store)
++    event = MessageEvent(text="/resume " + old.session_id, source=source, message_type=MessageType.TEXT)
++    try:
++        result = loop_thread.run(runner._handle_resume_command(event))
++        assert store.peek_session_id(old.session_key) == old.session_id
++        assert "Previous conversation" in result
++        assert any(m.get("content") == "Remember my blue bike" for m in store.load_transcript(old.session_id))
++        db.create_session("foreign-session", "gadget", chat_id="other", user_id="other")
++        event.text = "/resume foreign-session"
++        loop_thread.run(runner._handle_resume_command(event))
++        assert store.peek_session_id(old.session_key) == old.session_id
++    finally:
++        db.close()
