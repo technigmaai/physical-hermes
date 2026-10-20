@@ -19,7 +19,7 @@ Tools, memory, skills and scheduled jobs all work. It shares your Hermes brain, 
 
 ## Settings on the device
 
-Swipe to open the settings screen for:
+Hold the screen's title bar for one second to open settings for:
 
 - Volume
 - Screen brightness

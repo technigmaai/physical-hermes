@@ -22,6 +22,10 @@ Target identified by owner: ESP32-S3-Touch-AMOLED-2.16. PCB revision not establi
 | Serial diagnostic | Display `co5300`, microphone `es7210`, speaker `es8311`, touch present |
 | I2C scan | `0x18`, `0x34`, `0x40`, `0x51`, `0x5a`, `0x6b` |
 | Local tool tests | Four offline unit checks passed: packaged image, corrupted-image rejection, protected-flash rejection, backup opt-out |
+| Hermes host | macOS; Hermes Agent 0.22.2, local revision `d923a5eb487a` |
+| Gadget plugin | Installed and enabled from the same pinned SDK commit |
+| Gateway | Started using Hermes CLI; launchd supervision confirmed; TCP port 8765 listening |
+| Device server setting | Saved and read back over USB; points to the Mac's LAN gateway URL |
 
 Factory backup was explicitly declined by the owner. Earlier read attempts did not produce a verified full backup. Flashed directly using esptool 5.3.0 with its bundled v1 stub after default v2 read transfers stopped. Full logs remain private and ignored; provisioning credentials are not included here.
 
