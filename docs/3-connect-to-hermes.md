@@ -1,6 +1,6 @@
 # Connect to Hermes
 
-The robot is flashed and awake. Now it needs to find your Hermes.
+The ESP32-S3-Touch-AMOLED-2.16 is flashed and awake. Now it needs to find your Hermes.
 
 Do this on the machine where Hermes is installed.
 
@@ -9,7 +9,7 @@ Do this on the machine where Hermes is installed.
 The robot talks to Hermes over a websocket, using a plugin:
 
 ```bash
-hermes plugins install https://github.com/Adolanium/hermes-gadget-sdk/tree/main/plugin --enable --yes-deps
+hermes plugins install https://github.com/Adolanium/hermes-gadget-sdk/tree/main/plugin --ref 63e664c9920321b44390e8161535008e4f73513b --enable --yes-deps
 ```
 
 ## 2. Turn the platform on and restart
@@ -68,9 +68,15 @@ Your Wi-Fi password goes straight from your phone to the robot. It never passes 
 
 > The temporary network closes after ten minutes. If it lapses, power-cycle the robot to reopen it.
 
-## 6. It should come up Ready
+## 6. Approve pairing
 
-Within a few seconds the robot's screen changes from **Connecting…** to **Ready**. On your Hermes machine:
+When the board shows a pairing code, run on your Hermes machine:
+
+```bash
+hermes gadget pair
+```
+
+Check that its code matches the device before approving. It should then show **Ready**. This command lists connected devices:
 
 ```bash
 hermes gadget devices
@@ -80,7 +86,7 @@ should list it.
 
 ## 7. Talk to it
 
-Hold the **`boot`** button (right of the USB-C port), speak, and let go. Hermes hears you, thinks, and answers out loud.
+Hold the button marked **BOOT**, speak, and let go. Hermes hears you, thinks, and answers out loud. Button positions differ from the original 1.28-inch robot. Configure speech recognition and text-to-speech on the Hermes host; the device streams audio and does not run the language model locally.
 
 ## If it stays on "Connecting…"
 

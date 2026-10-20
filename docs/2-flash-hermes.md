@@ -1,60 +1,65 @@
-# Flash Hermes
+# Flash the 2.16-inch board
 
-This puts the Hermes firmware onto the robot. It's a one-time step, takes about five minutes, and needs a computer.
+Use **ESP32-S3-Touch-AMOLED-2.16** only. The original `spotpear-128-box` image targets different hardware.
 
-## What you need
+## Prepare
 
-- The robot
-- A USB-C **data** cable (charge-only cables won't work — it's the most common snag)
-- Python on your computer
-
-## 1. Install esptool
+From this repository:
 
 ```bash
-pip install esptool
+python3 -m venv .venv-flash
+source .venv-flash/bin/activate
+python -m pip install -r requirements-flash.txt
+python -m serial.tools.list_ports -v
+python scripts/flash.py --check
 ```
 
-## 2. Download the firmware
+Connect a USB-C **data** cable, close other serial monitors and identify the port. Typical ports are `/dev/cu.usbmodem...` on macOS, `/dev/ttyACM0` on Linux and `COM3` on Windows.
 
-Grab the prebuilt image from this repo:
-
-**`firmware/hermes-gadget-spotpear-128-box-0.2.0.bin`**
-
-It's a single file — bootloader, partition table and application all in one. You don't need the toolchain, ESP-IDF, or PlatformIO.
-
-## 3. Plug in and flash
-
-Plug the robot into your computer with the USB-C cable, then:
+## Back up and flash
 
 ```bash
-esptool.py --chip esp32s3 --baud 460800 write_flash 0x0 hermes-gadget-spotpear-128-box-0.2.0.bin
+python scripts/flash.py --port /dev/cu.usbmodem83201
 ```
 
-It should find the port by itself and start writing. You'll see progress bars and a final `Hash of data verified.`
+Replace the example port. The script verifies the packaged checksums and exact board tag, requires 16 MB flash and disabled Secure Boot/flash encryption, saves two matching full-flash reads, then writes and verifies the new image. Backups and SHA-256 records stay in ignored `backups/`; retain a separate private copy for rollback.
 
-### If it can't find the robot
+To back up without writing, add `--backup-only`. The merged image replaces the bootloader, partition table, OTA metadata and application from `0x0`, clearing settings in that range. No separate erase is needed. The `-app.bin` is for later compatible OTA updates, not a first USB install.
 
-Some boards need a nudge into download mode:
-
-1. Unplug the cable.
-2. **Hold the `boot` button** — it's the one to the **right** of the USB-C socket (the left one is power).
-3. Plug the cable back in while still holding `boot`.
-4. Keep holding for a couple of seconds, then release.
-
-Then run the flash command again.
-
-## 4. Check it worked
-
-Unplug and plug it back in. The screen should light up with the Hermes Gadget mascot, and it'll offer a Wi-Fi setup. If the screen stays dark, re-run the flash — nothing is permanently broken, the chip can always be reflashed.
-
-## Changing your mind
-
-To put it back exactly as it shipped, write your backup from step 4 of [The device](1-the-device.md):
+To install directly without a factory backup:
 
 ```bash
-esptool.py --chip esp32s3 write_flash 0x0 stock-firmware.bin
+python scripts/flash.py --port /dev/cu.usbmodem83201 --skip-backup
 ```
 
----
+The script defaults to esptool's bundled v1 stub after v2 read transfers stalled on this device. `--stub-version 2` selects the alternate implementation. The esptool version is pinned because its stub selector is an internal option.
 
-Next: **[Connect to Hermes →](3-connect-to-hermes.md)**
+After a verified backup, manual installation is also possible:
+
+```bash
+python -m esptool --chip esp32s3 --port /dev/cu.usbmodem83201 --baud 460800 write-flash 0x0 firmware/waveshare-216/hermes-gadget-esp32s3-touch-amoled-216-0.2.0.bin
+python -m esptool --chip esp32s3 --port /dev/cu.usbmodem83201 verify-flash 0x0 firmware/waveshare-216/hermes-gadget-esp32s3-touch-amoled-216-0.2.0.bin
+```
+
+If USB download fails, hold **BOOT**, reconnect USB while holding it, then release and check the port again. Keep power connected throughout backup and flashing. If a backup stops, do not proceed to writing; retry with a stable cable. A ROM read can help with stub-transfer issues:
+
+```bash
+python -m esptool --chip esp32s3 --port /dev/cu.usbmodem83201 --no-stub read-flash 0x0 0x1000000 backups/stock-rom.bin
+```
+
+## Verify startup
+
+The screen should show Hermes setup. On the USB console at 115200, check for `CO5300 480x480 ready`, `codecs: speaker ready, microphones ready (es7210)`, `touch ready`, `AXP2101 reporting ready` and board identity `esp32s3-touch-amoled-2.16`.
+
+Run `diag` on the console. Check actual screen orientation/colors, touch, microphone capture and audible replies; startup messages alone do not prove these work.
+
+## Restore factory firmware
+
+Use the verified backup from this same device:
+
+```bash
+python -m esptool --chip esp32s3 --port /dev/cu.usbmodem83201 write-flash 0x0 backups/YOUR-VERIFIED-STOCK.bin
+python -m esptool --chip esp32s3 --port /dev/cu.usbmodem83201 verify-flash 0x0 backups/YOUR-VERIFIED-STOCK.bin
+```
+
+Next: [Connect to Hermes](3-connect-to-hermes.md).

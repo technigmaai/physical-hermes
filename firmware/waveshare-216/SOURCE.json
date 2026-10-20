@@ -1,0 +1,13 @@
+{
+  "repository": "https://github.com/Adolanium/hermes-gadget-sdk",
+  "commit": "63e664c9920321b44390e8161535008e4f73513b",
+  "version": "0.2.0",
+  "environment": "esp32s3-touch-amoled-216",
+  "board_tag": "esp32s3-touch-amoled-2.16",
+  "workflow_run": "https://github.com/Adolanium/hermes-gadget-sdk/actions/runs/39287216026",
+  "workflow_job": "https://github.com/Adolanium/hermes-gadget-sdk/actions/runs/39287216026/job/118177569454",
+  "artifact": "firmware-esp32s3-touch-amoled-216",
+  "build_status": "success",
+  "origin": "Upstream CI artifact; not the v0.2.0 release assets or the original SpotPear 1.28-inch image",
+  "license_archive": "hermes-gadget-0.2.0-licenses.zip"
+}

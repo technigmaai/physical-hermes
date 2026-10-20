@@ -1,52 +1,32 @@
-# The device
+# ESP32-S3-Touch-AMOLED-2.16 hardware
 
-## Buy it
+Target: Waveshare / SpotPear **ESP32-S3-Touch-AMOLED-2.16**, Waveshare SKU 33969. This board has a square 480×480 AMOLED, unlike the original Physical Hermes round 1.28-inch robot.
 
-**[ESP32-S3 1.28" AI Voice Chat Robot](https://s.click.aliexpress.com/e/_c3d38V2l)** — about AU$36.
-
-It arrives as a finished little robot with a round screen and a face. Out of the box it wants to register with a Chinese cloud service. We're going to replace all of that.
-
-Choose the **touch** version if you're offered a choice — swipe-to-cancel uses it.
-
-## What's inside
-
-| Part | What it is |
+| Part | Selected configuration |
 |---|---|
-| Processor | ESP32-S3R8 — dual core, 240 MHz, 8 MB PSRAM |
-| Storage | 16 MB flash |
-| Screen | 1.28" round IPS, 240×240, GC9A01 controller |
-| Touch | CST816D capacitive (touch version) |
-| Speaker | ES8311 codec + NS4150B amplifier |
-| Microphone | Analog MEMS, wired into the ES8311 |
-| Battery | LiPo, charged over USB-C |
-| Extras | MicroSD slot, status LED, power button |
+| MCU / memory | ESP32-S3R8 at 240 MHz, 16 MB flash, 8 MB octal PSRAM at 80 MHz |
+| Display | CO5300, 480×480 RGB565, QSPI at 40 MHz; no framebuffer offset |
+| Display pins | CS 12, SCLK 38, D0 4, D1 5, D2 6, D3 7, RESET 39 |
+| Orientation | Vendor 480×480 initialization table, MADCTL `0xA0` |
+| Shared I2C | SDA 15, SCL 14, 400 kHz |
+| Touch | CST9220 at `0x5A`; RESET 40, INT 11; mirror Y then swap X/Y |
+| Speaker | ES8311 plus amplifier enable GPIO 46 |
+| Microphones | ES7210 ADC, MIC1/MIC2 |
+| Shared I2S | MCLK 42, BCLK 9, WS 45, speaker DOUT 8, microphone DIN 10 |
+| Power | AXP2101 at `0x34`; charging and supply settings preserved |
+| Buttons | BOOT GPIO 0: talk; PWR short press via AXP2101: screen sleep |
+| Console | USB Serial/JTAG, 115200 |
 
-Everything above is driven by the firmware in this repo. There is nothing left over and nothing missing.
+The SDK uses a 480×480 PSRAM framebuffer and its actual AMOLED driver. Scaling the old 240×240 robot image would not work. The GPIO18 key, IMU, RTC and SD slot are not exposed by this profile.
 
-## What you get for your money
+Sources:
 
-- A screen, a speaker, a microphone, a battery and a case — assembled.
-- A published schematic and pin table (we used them; you can too).
-- Firmware built from open source, so the board is genuinely yours to reprogram.
+- [Vendor guide](https://spotpear.com/wiki/ESP32-S3-2.16-inch-AMOLED-Display-Capacitive-TouchScreen.html)
+- [Waveshare example source](https://github.com/waveshareteam/ESP32-S3-Touch-AMOLED-2.16)
+- Pinned [`board.cpp`](../sdk/firmware/esp32/main/board.cpp): `CONFIG_HG_BOARD_AMOLED_216`
+- Pinned [`port_amoled.cpp`](../sdk/firmware/esp32/main/port_amoled.cpp): `kInit480`
+- Pinned [`sdkconfig.defaults`](../sdk/firmware/esp32/boards/esp32s3-touch-amoled-216/sdkconfig.defaults)
 
-Comparable dev boards with all of that cost more and come as bare PCBs.
+Run `git submodule update --init --recursive` to populate source links. USB VID/PID `303A:1001` identifies Espressif USB Serial/JTAG, not the display model. Confirm the board label before flashing.
 
-## Things worth knowing
-
-**It's 2.4 GHz Wi-Fi only.** The ESP32-S3 has no 5 GHz radio. If your home network is 5 GHz-only, enable the 2.4 GHz band or join it to a combined network.
-
-**The battery is real.** Unplug it and it keeps running. You can carry it around the house.
-
-**The stock firmware talks to `api.tenclass.net`** — a vendor cloud, for speech recognition and over-the-air updates. Replacing the firmware is the whole point of this project: afterwards it talks only to your Hermes.
-
-**Keep the original firmware if you want it back.** Before flashing anything, save a copy of what's on it:
-
-```bash
-esptool.py --chip esp32s3 read_flash 0 0x1000000 stock-firmware.bin
-```
-
-Takes about 80 seconds. Restoring it later is a single `write_flash`.
-
----
-
-Next: **[Flash Hermes →](2-flash-hermes.md)**
+Next: [Flash Hermes](2-flash-hermes.md).

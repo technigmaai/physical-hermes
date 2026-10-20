@@ -2,7 +2,7 @@
 
 ## Talking
 
-**Hold `boot`, speak, release.** That's the whole interaction. The button sits to the **right** of the USB-C port.
+**Hold the button marked BOOT, speak, release.** Use the label on your ESP32-S3-Touch-AMOLED-2.16; its button positions differ from the original robot.
 
 Replies appear on screen and are spoken aloud at the same time. Swipe down on the screen to cancel a reply mid-sentence.
 
@@ -30,13 +30,13 @@ Swipe to open the settings screen for:
 
 ## Battery
 
-Unplug it and it keeps going. The screen shows the charge level and whether it's charging.
+Portable use requires a compatible battery connected to the board's battery header. The AXP2101 supplies battery and charging information. Battery operation, charging accuracy and runtime remain unverified for this experimental profile.
 
-The battery drains faster with the screen on. Set a **screen timeout** and it'll sleep between conversations and wake when you talk to it.
+Use a screen timeout to reduce display power. This profile does not enable CPU light sleep. A short PWR press controls screen sleep; check wake behavior on your hardware before relying on it.
 
 ## Over-the-air updates
 
-Once it's connected, your Hermes machine can push new firmware to it without a cable. Firmware updates arrive through the plugin — you won't need to re-flash.
+Once connected, the plugin can send an app-only image for this exact board using `hermes gadget update`. Keep a USB recovery path and the original backup. OTA and rollback still require physical validation; never send the original 1.28-inch image to this board.
 
 ## Speech
 
