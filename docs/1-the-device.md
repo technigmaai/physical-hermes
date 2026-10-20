@@ -1,6 +1,6 @@
 # ESP32-S3-Touch-AMOLED-2.16 hardware
 
-Target: Waveshare / SpotPear **ESP32-S3-Touch-AMOLED-2.16**, Waveshare SKU 33969. This board has a square 480×480 AMOLED, unlike the original Physical Hermes round 1.28-inch robot.
+Target: Waveshare / SpotPear **ESP32-S3-Touch-AMOLED-2.16**, Waveshare SKU 33969. It has a 480×480 framebuffer with a physically rounded rectangular screen opening, unlike the original Physical Hermes circular 1.28-inch robot.
 
 | Part | Selected configuration |
 |---|---|
@@ -8,6 +8,7 @@ Target: Waveshare / SpotPear **ESP32-S3-Touch-AMOLED-2.16**, Waveshare SKU 33969
 | Display | CO5300, 480×480 RGB565, QSPI at 40 MHz; no framebuffer offset |
 | Display pins | CS 12, SCLK 38, D0 4, D1 5, D2 6, D3 7, RESET 39 |
 | Orientation | Vendor 480×480 initialization table, MADCTL `0xA0` |
+| Rounded-corner layout | 48-pixel additional side insets for header/footer text; full-width central content |
 | Shared I2C | SDA 15, SCL 14, 400 kHz |
 | Touch | CST9220 at `0x5A`; RESET 40, INT 11; mirror Y then swap X/Y |
 | Speaker | ES8311 plus amplifier enable GPIO 46 |

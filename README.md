@@ -4,7 +4,7 @@ Give Hermes Agent a voice device using the **Waveshare / SpotPear ESP32-S3-Touch
 
 This fork adapts [RegeneratusLabs/physical-hermes](https://github.com/RegeneratusLabs/physical-hermes) to your 2.16-inch board. The original targets a different 1.28-inch GC9A01 robot. **Use only the image in `firmware/waveshare-216/` for this board.**
 
-The adaptation selects the SDK's exact `esp32s3-touch-amoled-216` profile: CO5300 480×480 initialization, QSPI pins, CST9220 coordinate transform, ES8311/ES7210 audio and AXP2101 power support. The SDK is pinned as a [source submodule](sdk) at `63e664c9920321b44390e8161535008e4f73513b`; no new display driver is needed. See [the hardware configuration](docs/1-the-device.md).
+The adaptation selects the SDK's exact `esp32s3-touch-amoled-216` profile: CO5300 480×480 initialization, QSPI pins, CST9220 coordinate transform, ES8311/ES7210 audio and AXP2101 power support. Firmware **0.2.0-rounded.1** adds header and footer margins for the physical rounded screen corners. The SDK is pinned as a [source submodule](sdk) at `63e664c9920321b44390e8161535008e4f73513b`, with our [layout overlay](firmware/waveshare-216/rounded-layout.patch) applied during builds. See [the hardware configuration](docs/1-the-device.md).
 
 ## Flash
 
@@ -45,12 +45,13 @@ Hold **BOOT**, speak, then release. Hermes processes the request and streams its
 - [Firmware, checksums and build provenance](firmware/waveshare-216/)
 - [Rebuild instructions](firmware/README.md)
 - [Local installation and validation report](docs/5-validation.md)
+- [Rounded-corner layout and settings-preserving updates](docs/6-rounded-layout.md)
 - [Original hardware-porting skill](skills/hermes-gadget-hardware/SKILL.md)
 
-The included binary comes from a [successful upstream CI build](https://github.com/Adolanium/hermes-gadget-sdk/actions/runs/39287216026/job/118177569454) of the pinned source, not the older v0.2.0 release assets. It retains the SDK's version string 0.2.0. Upstream marks this board **experimental**: its USB smoke check covers boot, display, codec initialization, touch-task startup, power reporting and the setup network. Voice, touch accuracy, pairing, battery, OTA and long-session validation must be recorded separately. See [upstream validation](https://github.com/Adolanium/hermes-gadget-sdk/blob/63e664c9920321b44390e8161535008e4f73513b/docs/hardware-validation.md#waveshare-amoled-216-physical-smoke-check).
+The included firmware is built locally from the pinned SDK plus the layout overlay. [SOURCE.json](firmware/waveshare-216/SOURCE.json) records the patch hash and build tools; the original upstream CI baseline is retained in [UPSTREAM-CI.json](firmware/waveshare-216/UPSTREAM-CI.json). All 253 portable core tests pass, including the corner-padding regression. The owner has confirmed pairing and real voice interaction on the original image. This port remains **experimental** pending complete touch, battery, recovery and long-session validation; see [the local report](docs/5-validation.md).
 
 ## Credits and licenses
 
 Based on **Physical Hermes** by RegeneratusLabs and the **Hermes Gadget SDK** by Adolanium and contributors (MIT). The SDK is an independent community project, not affiliated with Nous Research. Board support follows Waveshare's published BSP and hardware. Hermes Agent is by Nous Research.
 
-Keep [LICENSE](LICENSE) and the matching `hermes-gadget-0.2.0-licenses.zip` with redistributed firmware. The archive contains SDK and dependency notices. The original 1.28-inch binary and patch remain under `firmware/` for reference and must not be flashed to this board.
+Keep [LICENSE](LICENSE) and the matching `hermes-gadget-0.2.0-rounded.1-licenses.zip` with redistributed firmware. The archive contains SDK and dependency notices. The original 1.28-inch binary and patch remain under `firmware/` for reference and must not be flashed to this board.

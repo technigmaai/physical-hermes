@@ -1,13 +1,21 @@
 {
   "repository": "https://github.com/Adolanium/hermes-gadget-sdk",
   "commit": "63e664c9920321b44390e8161535008e4f73513b",
-  "version": "0.2.0",
+  "version": "0.2.0-rounded.1",
   "environment": "esp32s3-touch-amoled-216",
   "board_tag": "esp32s3-touch-amoled-2.16",
-  "workflow_run": "https://github.com/Adolanium/hermes-gadget-sdk/actions/runs/39287216026",
-  "workflow_job": "https://github.com/Adolanium/hermes-gadget-sdk/actions/runs/39287216026/job/118177569454",
-  "artifact": "firmware-esp32s3-touch-amoled-216",
-  "build_status": "success",
-  "origin": "Upstream CI artifact; not the v0.2.0 release assets or the original SpotPear 1.28-inch image",
-  "license_archive": "hermes-gadget-0.2.0-licenses.zip"
+  "origin": "Local PlatformIO build of pinned SDK plus rounded-layout.patch",
+  "patch": "rounded-layout.patch",
+  "patch_sha256": "3ab7f948178cb5babc7544855a02339dab056549c8040fcf44e57b7bc53eede4",
+  "platformio": "6.2.0",
+  "platform_espressif32": "8.0.0",
+  "esp_idf": "6.1.0",
+  "toolchain_xtensa_esp_elf": "15.2.0+20251204",
+  "license_archive": "hermes-gadget-0.2.0-rounded.1-licenses.zip",
+  "upstream_ci_baseline": "UPSTREAM-CI.json",
+  "host_core_tests": {
+    "cases": 253,
+    "failed": 0
+  },
+  "layout": "48px header/footer corner inset, full 480x480 framebuffer"
 }

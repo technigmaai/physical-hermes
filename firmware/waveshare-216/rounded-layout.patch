@@ -1,0 +1,132 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index b2eea38..c1e98e3 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -4,6 +4,8 @@
+ 
+ ### Hardware and setup
+ 
++- AMOLED-2.16: keep header labels and footer hints clear of the rounded visible screen corners with 48-pixel side insets. The framebuffer and central content stay 480×480. Footer text now respects a rectangular panel's existing corner inset.
++
+ - Board support for the Waveshare ESP32-S3-Knob-Touch-LCD-1.8: round 360×360 SH8601 QSPI LCD (Espressif's `esp_lcd_sh8601`), CST816S touch, one PDM microphone, a rotary encoder that scrolls, ESP32-S3R8 with 16 MB flash and 8 MB PSRAM. Hold the screen or BOOT to talk. The port doesn't drive the board's headphone DAC, so replies are shown as text and not played. The panel's initialization table comes from Waveshare's ESP-IDF demo. Adds a `sim-360x360-knob` simulator profile. Experimental: a contributor test showed the display, hold-to-talk touch and microphone capture through a full voice turn; the full checklist is not completed. Contributed by @Delphus123.
+ - With `latch_power.usb_external_power`, the latch power driver reports external power while the charging signal is on or a USB host is connected to the S3's own USB port. Boards with a battery latch and no USB-status input could not tell battery from USB, so Wi-Fi modem sleep never applied on battery. The Spotpear muma now reports its battery voltage (divider by two on GPIO 1) and charging signal (GPIO 41), and both the muma and the Waveshare LCD-1.54 report external power. Contributed by Luiz Gustavo Saraiva (@luizgustavosaraiva).
+ - Board support for Espressif's ESP-VoCat, v1.2 only: round 360×360 ST77916 QSPI panel, CST816S touch, ES7210 microphones, ES8311 speaker output through an NS4150B amplifier, 16 MB flash and 16 MB PSRAM. BOOT talks as well as the screen. The panel takes Espressif's own start-up table from the ESP-VoCat BSP, so ST77916 boards can now choose their table (`lcd.st77916_panel`) instead of having it picked by the Waveshare panel ID, and boards can switch GPIO-driven supplies on at boot (`power_rails`), which the VoCat needs for its LCD/SD rail and codec supply. The BMI270 IMU, BQ27220 fuel gauge, head touch pads and LED are not used yet. Experimental: a contributor smoke test on USB power covered boot, display, both codecs, touch, Wi-Fi, pairing and a hold-to-talk voice turn; the full checklist is not completed. Contributed by @dreamhunter02.
+diff --git a/firmware/core/include/hg/hal.hpp b/firmware/core/include/hg/hal.hpp
+index f0993eb..5006bff 100644
+--- a/firmware/core/include/hg/hal.hpp
++++ b/firmware/core/include/hg/hal.hpp
+@@ -29,7 +29,7 @@ struct DisplayInfo {
+   // Multiplier on the UI's automatic font scale, for panels small enough that
+   // the automatic pick reads as too small. The UI clamps the final scale.
+   uint8_t font_scale = 1;
+-  // Extra left and right padding for the top bar's text, for a rectangular
++  // Extra left and right padding for the top and bottom bars' text, for a rectangular
+   // panel with rounded corners.
+   uint8_t corner_inset = 0;
+   // An OLED/AMOLED panel: unlit pixels draw no power, so the background is
+diff --git a/firmware/core/src/ui.cpp b/firmware/core/src/ui.cpp
+index 1153636..4348741 100644
+--- a/firmware/core/src/ui.cpp
++++ b/firmware/core/src/ui.cpp
+@@ -842,7 +842,8 @@ void Ui::draw_bottom(Canvas& c, const UiModel& m) {
+   const int s = layout_.scale;
+   const int y0 = info_.height - layout_.bottom_h;
+   c.fill_rect(0, y0, info_.width, layout_.bottom_h, panel_.round ? bg_ : kBar);
+-  std::string hint = fit(m.hint, cols_for(info_.width - 4 * s, s));
++  const int pad = 2 * s + (panel_.round ? 0 : panel_.corner_inset);
++  std::string hint = fit(m.hint, cols_for(std::max(0, info_.width - 2 * pad), s));
+   c.text((info_.width - Canvas::text_width(hint, s)) / 2, y0 + s, hint, s, kDim);
+ }
+ 
+diff --git a/firmware/esp32/main/board.cpp b/firmware/esp32/main/board.cpp
+index 469ebd6..4657cc7 100644
+--- a/firmware/esp32/main/board.cpp
++++ b/firmware/esp32/main/board.cpp
+@@ -240,7 +240,7 @@ BoardConfig make() {
+   b.name = kBoardName;
+   b.amoled.enabled = true;
+   b.amoled.width = 480;
+-  b.amoled.height = 480;    // square glass, no round corners
++  b.amoled.height = 480;    // full framebuffer; the visible opening has rounded corners
+   b.amoled.cs = 12;
+   b.amoled.sclk = 38;
+   b.amoled.d0 = 4;
+@@ -251,6 +251,9 @@ BoardConfig make() {
+   b.amoled.gap_x = 0;       // the controller RAM is exactly 480 wide
+   b.amoled.gap_y = 0;
+   b.amoled.panel = AmoledPanel::Co5300_480;
++  // Keep the title, status and footer inside the rounded visible opening.
++  // The centre of the screen still uses the full 480-pixel width.
++  b.amoled.corner_inset = 48;
+   b.i2c = {15, 14, 400000};
+   b.codec.enabled = true;
+   b.codec.mclk = 42;
+diff --git a/firmware/esp32/platformio.ini b/firmware/esp32/platformio.ini
+index 556ecf0..4db8c87 100644
+--- a/firmware/esp32/platformio.ini
++++ b/firmware/esp32/platformio.ini
+@@ -80,6 +80,7 @@ board_build.flash_size = 16MB
+ board_upload.flash_size = 16MB
+ board_build.cmake_extra_args =
+     -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;boards/esp32s3-touch-amoled-216/sdkconfig.defaults"
++    -DPROJECT_VER=0.2.0-rounded.1
+ 
+ [env:esp32-s3-box-3]
+ board = esp32-s3-devkitc-1
+diff --git a/firmware/tests/test_app.cpp b/firmware/tests/test_app.cpp
+index 0323d80..5b5afd2 100644
+--- a/firmware/tests/test_app.cpp
++++ b/firmware/tests/test_app.cpp
+@@ -74,6 +74,7 @@ struct FakeHal : hg::Display, hg::AudioIn, hg::AudioOut, hg::Transport, hg::Stor
+   // Display
+   int width = 320, height = 240;
+   bool round = false;
++  uint8_t corner_inset = 0;
+   bool emissive = false;
+   bool backlight = false;
+   int brightness = 0, volume = 0;
+@@ -85,6 +86,7 @@ struct FakeHal : hg::Display, hg::AudioIn, hg::AudioOut, hg::Transport, hg::Stor
+     d.width = static_cast<uint16_t>(width);
+     d.height = static_cast<uint16_t>(height);
+     d.round = round;
++    d.corner_inset = corner_inset;
+     d.emissive = emissive;
+     d.has_backlight = backlight;
+     return d;
+@@ -1014,6 +1016,36 @@ TEST("app: long replies page themselves; UP/DOWN pauses the paging") {
+   CHECK(r.app.model().hero);
+ }
+ 
++TEST("display: rounded 480x480 panel keeps header and footer text clear of its corners") {
++  FakeHal display;
++  display.width = display.height = 480;
++  display.corner_inset = 48;
++  display.emissive = true;
++  display.fb.assign(480 * 480, 0);
++  hg::Ui ui(display);
++  hg::UiModel m;
++  m.screen = hg::Screen::Ready;
++  m.link = hg::Link::Online;
++  m.title = "Hermes Gadget with a very long name";
++  m.hint = "Hold the screen to talk / swipe down to cancel";
++  m.hero = true;
++  ui.render(m);
++  CHECK_EQ(ui.area().width, 480);
++  CHECK_EQ(ui.area().height, 480);
++  const uint16_t bar = hg::rgb565(24, 31, 42);
++  int stray = 0, foreground = 0;
++  for (int y = 0; y < 480; ++y) {
++    if (y >= ui.layout().top_h && y < 480 - ui.layout().bottom_h) continue;
++    for (int x = 0; x < 480; ++x) {
++      const bool painted = display.fb[y * 480 + x] != bar;
++      if (x < 48 || x >= 432) stray += painted;
++      else foreground += painted;
++    }
++  }
++  CHECK_EQ(stray, 0);
++  CHECK(foreground > 100);  // labels are visible, not simply hidden
++}
++
+ TEST("app: on a round panel everything stays inside the circle") {
+   Rig r;
+   r.fake.make_round(466);

@@ -1,6 +1,8 @@
-# Local installation report — 2026-10-20
+# Local installation reports — 2026-10-20
 
 Target identified by owner: ESP32-S3-Touch-AMOLED-2.16. PCB revision not established.
+
+## Initial 0.2.0 installation
 
 | Check | Result |
 |---|---|
@@ -29,4 +31,16 @@ Target identified by owner: ESP32-S3-Touch-AMOLED-2.16. PCB revision not establi
 
 Factory backup was explicitly declined by the owner. Earlier read attempts did not produce a verified full backup. Flashed directly using esptool 5.3.0 with its bundled v1 stub after default v2 read transfers stopped. Full logs remain private and ignored; provisioning credentials are not included here.
 
-These are startup checks plus the owner's display confirmation, not complete physical validation. Touch coordinates and gestures, microphone capture, audible speaker playback, pairing, network recovery, battery behavior, OTA/rollback and a long session remain to be checked. This board profile remains experimental.
+After this installation the owner confirmed Wi-Fi setup, pairing and real interaction with Hermes. Their photo showed a spoken response and exposed clipping of the title and connection label at the physical rounded corners.
+
+## Rounded-corner update: 0.2.0-rounded.1
+
+- Source: pinned SDK plus `rounded-layout.patch`; local build using PlatformIO 6.2.0, Espressif32 8.0.0 and ESP-IDF 6.1.0. The `sdk/` submodule remains unchanged.
+- Display change: 48-pixel corner insets for header/footer text; full 480×480 framebuffer and unchanged touch coordinates.
+- Regression: the pixel test first failed on the old footer behavior, then passed with the fix. All 253 core cases pass, including circular layouts. Four flash-tool checks pass.
+- Preview: production renderer inspected with an approximate rounded aperture; this is simulated evidence, not a physical screen measurement.
+- Build: ESP32-S3 firmware and packaging succeeded; app 1,377,184 bytes, 32.2% OTA slot headroom. Image, app and license checksums verified.
+- Installation: app-only update through the paired Hermes connection, with the existing OTA slots. No factory backup or settings erase was performed.
+- Reconnection: Hermes reports `0.2.0-rounded.1` under the existing device identity.
+
+This remains partial hardware validation. Exact touch coordinates, audio quality, battery behavior, forced network loss, OTA rollback and a long session remain unverified. The port stays experimental.
